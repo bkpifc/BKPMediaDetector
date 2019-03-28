@@ -2,7 +2,7 @@
 
 ######
 # General Detector
-# 06.12.2018
+# 28.03.2019
 # LRB
 # Adapted from Tensorflow Object Detection Sample Script
 ######
@@ -16,6 +16,8 @@ import hashlib
 import cv2
 import magic
 import PySimpleGUI as sg
+import csv
+from itertools import groupby
 from distutils.version import StrictVersion
 from PIL import Image
 from datetime import datetime
@@ -33,14 +35,14 @@ startTime = datetime.now()
 sg.ChangeLookAndFeel('BluePurple')
 
 layout = [[sg.Text('Please specify the folder holding the media data:')],
-          [sg.Input(), sg.FolderBrowse('Browse',initial_folder='/home/bulu/Desktop/TestBilder')],
+          [sg.Input(), sg.FolderBrowse('Browse',initial_folder='/home')],
           [sg.Text('Where shall I place the results?')],
-          [sg.Input(), sg.FolderBrowse('Browse',initial_folder='/home/bulu/Desktop/TestResultat')],
+          [sg.Input(), sg.FolderBrowse('Browse',initial_folder='/home')],
           [sg.Text('Which things do you want to detect?')],
           [sg.Checkbox('Objects/Persons', size=(15,1)),
            sg.Checkbox('Actions'),
            sg.Checkbox('IS Logos')],
-          [sg.Text('Output Format:'), sg.Listbox(values=('Nuix', 'csv'), size=(30, 3))],
+          [sg.Text('Output Format:'), sg.Listbox(values=('Nuix', 'XWays', 'csv'), size=(30, 3))],
           [sg.OK(), sg.Cancel()]]
 
 layout_progress = [[sg.Text('Detection in progress')],
@@ -81,7 +83,7 @@ if StrictVersion(tf.__version__) < StrictVersion('1.9.0'):
 # Defining multiple needed variables based on config file paths & adding object_detection directory to path
 PATH_TO_TEST_IMAGES_DIR = gui_input[1][0]
 PATH_TO_RESULTS = gui_input[1][1]
-PATH_TO_OBJECT_DETECTION_DIR = '/home/bulu/Programs/models/research'
+PATH_TO_OBJECT_DETECTION_DIR = '/home/b/Programs/tensorflow/models/research'
 IMAGENAMES = os.listdir(PATH_TO_TEST_IMAGES_DIR)
 TEST_IMAGE_PATHS = [PATH_TO_TEST_IMAGES_DIR + '/' + i for i in IMAGENAMES]
 REPORT_FORMAT = gui_input[1][5]
@@ -250,7 +252,7 @@ def run_inference_for_multiple_images(images, hashvalues):
 
     # Prepare results file with headers
     detectionr = open(PATH_TO_RESULTS + "/Detection_Results.csv", 'w')
-    if REPORT_FORMAT == 'Nuix':
+    if REPORT_FORMAT[0] == 'Nuix':
         detectionr.write("tag,searchterm\n")
     else:
         detectionr.write("hash,score,category\n")
@@ -264,12 +266,17 @@ def run_inference_for_multiple_images(images, hashvalues):
             od_graph_def = tf.GraphDef()
 
             logfile.write("*" + str(datetime.now()) + ": Starting detection with model " + str(y + 1) + " of " + str(len(graphlist)) + "*\n")
+
+            # Update progress indicator
             if sg.OneLineProgressMeter('BKP Media Detector', 5 + y, 8, 'key', 'Detecting with model {}'.format(graphlist[y]),orientation='h',size=(100, 10)) == False: exit()
+
+            # Load the respective detetion graph from file
             with tf.gfile.GFile(graphlist[y], 'rb') as fid:
                 serialized_graph = fid.read()
                 od_graph_def.ParseFromString(serialized_graph)
                 tf.import_graph_def(od_graph_def, name='')
 
+            # Create TF session
             with tf.Session() as sess:
                 # Get handles to input and output tensors
                 ops = tf.get_default_graph().get_operations()
@@ -314,9 +321,10 @@ def run_inference_for_multiple_images(images, hashvalues):
                             score = output_dict['detection_scores'][j]
                             category = category_index[output_dict['detection_classes'][j]]
 
+                            # Validate against the preconfigured minimum detection assurance and write to result file
                             if (score >= detectionlimit):
                                 scorestring = str(score)
-                                if REPORT_FORMAT == 'Nuix':
+                                if REPORT_FORMAT[0] == 'Nuix':
                                     line = ",".join([category['name'], "md5:" + hashvalue])
                                 else:
                                     line = ",".join([hashvalue, scorestring, category['name']])
@@ -333,8 +341,44 @@ def run_inference_for_multiple_images(images, hashvalues):
 
     return detectedLogos, errorcount
 
+######
+#
+# Split the report file to allow seamless integration into XWays Hash Database per category
+#
+######
+
+def createXWaysReport():
+
+    for key, rows in groupby(csv.reader(open(PATH_TO_RESULTS + "/Detection_Results.csv")),
+                             lambda row: row[2]):
 
 
+        # Replace special characters in categories
+        if str(key) != 'category':
+            key = str(key).replace("/","-")
+            key = str(key).replace(".", "")
+            key = str(key).replace("(", "")
+            key = str(key).replace(")", "")
+
+            # Create a separate txt file for every detected category
+            with open(PATH_TO_RESULTS + "/%s.txt" % key, 'a') as rf:
+
+                for row in rows:
+                    rf.write(row[0] + "\n")
+
+                rf.flush()
+
+    # Get a list of all files in results directory
+    resultsfiles = os.listdir(PATH_TO_RESULTS)
+
+    # Prepend them with MD5 for seamless import into XWays
+    for file in resultsfiles:
+        line = "md5"
+        if file[-3:] == 'txt':
+            with open(PATH_TO_RESULTS + '/' + file, 'r+') as ff:
+                content = ff.read()
+                ff.seek(0,0)
+                ff.write(line.rstrip('\r\n') + '\n' + content)
 
 
 ######
@@ -349,23 +393,21 @@ if sg.OneLineProgressMeter('BKP Media Detector', 2, 8,  'key', 'Process started.
 # Create logfile
 logfile = open(PATH_TO_RESULTS + "/Logfile.txt", 'w')
 logfile.write('***DETECTION LOG***\n')
-
 logfile.write("*" + str(datetime.now()) + ': Process started. Loading images...*\n')
 
+# Prevent execution when externally called
 if __name__ == '__main__':
-
-
 
     # Initiate needed variables
     vidlist = []
     final_images = []
     errors = []
 
-
     # Multiprocess the image load function on all CPU cores available
     pool = Pool(maxtasksperchild=100)
     processed_images = pool.map(load_image_into_numpy_array, TEST_IMAGE_PATHS, chunksize=10)
     pool.close()
+
     # Synchronize after completion
     pool.join()
     pool.terminate()
@@ -389,16 +431,17 @@ if __name__ == '__main__':
         logfile.write(error)
     logfile.flush()
 
-
     # Count the number of images before adding the videoframes
     number_of_images = len(final_images)
 
+    # Update the progress indicator
     if sg.OneLineProgressMeter('BKP Media Detector', 3, 8, 'key', 'Loading Videos...',orientation='h',size=(100, 10)) == False: exit()
 
     # Multiprocess the video load function on all CPU cores available
     pool = Pool(maxtasksperchild=100)
     videoframes = pool.map(load_video_into_numpy_array, vidlist)
     pool.close()
+
     # Synchronize after completion
     pool.join()
     pool.terminate()
@@ -420,16 +463,18 @@ if __name__ == '__main__':
     # Split the result from the loading function into hashes and image arrays
     hashvalues, image_nps = zip(*final_images)
 
+    # Update the progress indicator & logfile
     if sg.OneLineProgressMeter('BKP Media Detector', 4, 8, 'key', 'Starting detection...',orientation='h',size=(100, 10)) == False: exit()
-
     logfile.write("*" + str(datetime.now()) + ": Loading completed. Detecting...*\n")
 
     # Execute detection
     detectedLogos, errorcount = run_inference_for_multiple_images(image_nps, hashvalues)
 
+    # Check whether an Xways report needs to be created
+    if REPORT_FORMAT[0] == 'XWays':
+        createXWaysReport()
 
-
-    # Print process statistics to stdout
+    # Write process statistics to logfile
     logfile.write("*Results: " + PATH_TO_RESULTS + "/Detection_Results.csv*\n")
     logfile.write("*Total Amount of Files: " + str(len(TEST_IMAGE_PATHS)) + " (of which " + str(number_of_images + number_of_videos) + " where processed.)*\n")
     logfile.write("*Processed Images: " + str(number_of_images) + "*\n")
@@ -440,8 +485,10 @@ if __name__ == '__main__':
     logfile.flush()
     logfile.close()
 
+    # Update progress indicator
     sg.OneLineProgressMeter('BKP Media Detector', 8, 8, 'key', 'Detection finished',orientation='h',size=(100, 10))
 
+# Deliver final success pop up to user
 sg.Popup('The detection was successful',
          'The results are placed here:',
          'Path: "{}"'.format(PATH_TO_RESULTS))
