@@ -40,5 +40,5 @@ For guidance on re-training the model, or to create a fully new tensorflow model
 
 ## License:
 Release under Apache 2.0 license.
-Using input from Tensorflow (https://github.com/tensorflow/), the Open Images Project (https://storage.googleapis.com/openimages/web/extras.html) as well as the AVA Project (https://research.google.com/ava/download.html) all together release under Apache 2.0. Whereas no modification was done to the pre-trained model files, the actual detection script is only losely based on the Object Detection Tutorial by Tensorflow.
+Using input from Tensorflow (https://github.com/tensorflow/), the Open Images Project (https://storage.googleapis.com/openimages/web/extras.html) as well as the AVA Project (https://research.google.com/ava/download.html) all together released under Apache 2.0. Whereas no modification was done to the pre-trained model files, the actual detection script is my own work, relying though on certain python modules.
 Feel free to use and adapt - feedback is appreciated.
