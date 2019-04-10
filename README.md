@@ -37,3 +37,8 @@ For guidance on re-training the model, or to create a fully new tensorflow model
 [Step by step tensorflow object detection api tutorial](https://medium.com/@WuStangDan/step-by-step-tensorflow-object-detection-api-tutorial-part-1-selecting-a-model-a02b6aabe39e)
 
 [TF Object Detection Model Training](https://gist.github.com/douglasrizzo/c70e186678f126f1b9005ca83d8bd2ce)
+
+## License:
+Release under Apache 2.0 license.
+Using input from Tensorflow (https://github.com/tensorflow/), the Open Images Project (https://storage.googleapis.com/openimages/web/extras.html) as well as the AVA Project (https://research.google.com/ava/download.html) all together release under Apache 2.0. Whereas no modification was done to the pre-trained model files, the actual detection script is only losely based on the Object Detection Tutorial by Tensorflow.
+Feel free to use and adapt - feedback is appreciated.
