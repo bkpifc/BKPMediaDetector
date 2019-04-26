@@ -2,7 +2,7 @@
 
 ######
 # General Detector
-# 28.03.2019
+# 26.04.2019
 # LRB
 # Adapted from Tensorflow Object Detection Sample Script
 ######
@@ -22,6 +22,7 @@ from distutils.version import StrictVersion
 from PIL import Image
 from datetime import datetime
 from multiprocessing import Pool
+from Models.Face import detect_face
 
 
 startTime = datetime.now()
@@ -41,7 +42,8 @@ layout = [[sg.Text('Please specify the folder holding the media data:')],
           [sg.Text('Which things do you want to detect?')],
           [sg.Checkbox('Objects/Persons', size=(15,1)),
            sg.Checkbox('Actions'),
-           sg.Checkbox('IS Logos')],
+           sg.Checkbox('IS Logos'),
+           sg.Checkbox('Faces')],
           [sg.Text('Output Format:'), sg.Listbox(values=('Nuix', 'XWays', 'csv'), size=(30, 3))],
           [sg.OK(), sg.Cancel()]]
 
@@ -70,7 +72,7 @@ if error == True:
 #
 ######
 
-if sg.OneLineProgressMeter('BKP Media Detector', 1, 8,  'key', 'Initializing variables & parameters...',orientation='h',size=(100, 10)) == False: exit()
+if sg.OneLineProgressMeter('BKP Media Detector', 1, 9,  'key', 'Initializing variables & parameters...',orientation='h',size=(100, 10)) == False: exit()
 
 # Variable to determine minimum GPU Processor requirement & to disable TF log output
 #os.environ['TF_MIN_GPU_MULTIPROCESSOR_COUNT'] = '5'
@@ -86,7 +88,7 @@ PATH_TO_RESULTS = gui_input[1][1]
 PATH_TO_OBJECT_DETECTION_DIR = '/home/b/Programs/tensorflow/models/research'
 IMAGENAMES = os.listdir(PATH_TO_TEST_IMAGES_DIR)
 TEST_IMAGE_PATHS = [PATH_TO_TEST_IMAGES_DIR + '/' + i for i in IMAGENAMES]
-REPORT_FORMAT = gui_input[1][5]
+REPORT_FORMAT = gui_input[1][6]
 sys.path.append(PATH_TO_OBJECT_DETECTION_DIR)
 frames_per_second = 0.25 #frames to analyze per second of video duration
 
@@ -119,6 +121,7 @@ if MODEL3:
     graphlist.append(SPECIAL_DETECTOR_GRAPH)
     indexlist.append(SPECIAL_DETECTOR_INDEX)
 
+FACE_MODEL = bool(gui_input[1][5])
 
 ######
 #
@@ -154,7 +157,7 @@ def load_image_into_numpy_array(image_path):
     # Throw errors to stdout
     except IOError:
         magictype = str(magic.from_file(image_path, mime=True))
-
+        print(image_path + " Type: " + magictype)
         # If image file cannot be read, check if it is a video
         if magictype[:5] == 'video':
             # If so, return a video flag instead of numpy array
@@ -258,6 +261,7 @@ def run_inference_for_multiple_images(images, hashvalues):
         detectionr.write("hash,score,category\n")
     detectionr.flush()
 
+
     for y in range(0, len(graphlist)):
 
         # Create TF Session with loaded graph
@@ -268,7 +272,7 @@ def run_inference_for_multiple_images(images, hashvalues):
             logfile.write("*" + str(datetime.now()) + ": Starting detection with model " + str(y + 1) + " of " + str(len(graphlist)) + "*\n")
 
             # Update progress indicator
-            if sg.OneLineProgressMeter('BKP Media Detector', 5 + y, 8, 'key', 'Detecting with model {}'.format(graphlist[y]),orientation='h',size=(100, 10)) == False: exit()
+            if sg.OneLineProgressMeter('BKP Media Detector', 5 + y, 9, 'key', 'Detecting with model {}'.format(graphlist[y]),orientation='h',size=(100, 10)) == False: exit()
 
             # Load the respective detetion graph from file
             with tf.gfile.GFile(graphlist[y], 'rb') as fid:
@@ -292,14 +296,13 @@ def run_inference_for_multiple_images(images, hashvalues):
 
                 image_tensor = tf.get_default_graph().get_tensor_by_name('image_tensor:0')
 
-
                 # Setting the detection limit of the different models.
                 if "ISLogo" not in graphlist[y]:
                     detectionlimit = 0.5
                 else:
                     detectionlimit = 0.90
 
-                # Loading the label map of the correspondig graph
+                # Loading the label map of the corresponding graph
                 category_index = indexlist[y]
 
                 # Conduct actual detection within single image
@@ -336,10 +339,49 @@ def run_inference_for_multiple_images(images, hashvalues):
 
                 logfile.write("*" + str(datetime.now()) + ": Finished detection with model " + str(y + 1) + "*\n")
 
+    # Executing Face Detector in a slightly different process if selected
+    if FACE_MODEL:
+
+        # Updating progress bar and logfile
+        if sg.OneLineProgressMeter('BKP Media Detector', 8, 9, 'key', 'Detecting with Face Detector',orientation='h',size=(100, 10)) == False: exit()
+        logfile.write("*" + str(datetime.now()) + ": Starting detection with face detection model*\n")
+
+        # Applying constants as defined in Facenet
+        minsize = 20
+        threshold = [0.6, 0.7, 0.7]
+        factor = 0.709
+
+        # Creating different TF Session
+        with tf.Session() as sess:
+
+            # read pnet, rnet, onet models from Models/Face directory
+            pnet, rnet, onet = detect_face.create_mtcnn(sess, 'Models/Face')
+
+            # Inference for all images
+            for index, image in enumerate(images):
+                try:
+                    bounding_boxes, _ = detect_face.detect_face(image, minsize, pnet, rnet, onet, threshold, factor)
+                    # If face detected, writing output to results file
+                    if not len(bounding_boxes) == 0:
+                        hashvalue = hashvalues[index]
+                        number_of_faces = len(bounding_boxes)
+                        if REPORT_FORMAT[0] == 'Nuix':
+                            line = "Face,md5:" + hashvalue
+                        else:
+                            line = str(hashvalue) + "," + str(number_of_faces) + ",Faces"
+                        detectionr.write(line + "\n")
+
+                except tf.errors.InvalidArgumentError:
+                    errorcount += 1
+                    logfile.write("Unable to detect faces in file with hash: " + str(hashvalue) + "\n")
+
+        logfile.write("*" + str(datetime.now()) + ": Finished detection with face detection model*\n")
+
     detectionr.flush()
     detectionr.close()
 
     return detectedLogos, errorcount
+
 
 ######
 #
@@ -351,7 +393,6 @@ def createXWaysReport():
 
     for key, rows in groupby(csv.reader(open(PATH_TO_RESULTS + "/Detection_Results.csv")),
                              lambda row: row[2]):
-
 
         # Replace special characters in categories
         if str(key) != 'category':
@@ -365,7 +406,6 @@ def createXWaysReport():
 
                 for row in rows:
                     rf.write(row[0] + "\n")
-
                 rf.flush()
 
     # Get a list of all files in results directory
@@ -374,7 +414,7 @@ def createXWaysReport():
     # Prepend them with MD5 for seamless import into XWays
     for file in resultsfiles:
         line = "md5"
-        if file[-3:] == 'txt':
+        if file[-3:] == 'txt' and file != 'Logfile.txt':
             with open(PATH_TO_RESULTS + '/' + file, 'r+') as ff:
                 content = ff.read()
                 ff.seek(0,0)
@@ -387,7 +427,7 @@ def createXWaysReport():
 #
 ######
 
-if sg.OneLineProgressMeter('BKP Media Detector', 2, 8,  'key', 'Process started. Loading images...',orientation='h',size=(100, 10)) == False: exit()
+if sg.OneLineProgressMeter('BKP Media Detector', 2, 9,  'key', 'Process started. Loading images...',orientation='h',size=(100, 10)) == False: exit()
 
 
 # Create logfile
@@ -435,7 +475,7 @@ if __name__ == '__main__':
     number_of_images = len(final_images)
 
     # Update the progress indicator
-    if sg.OneLineProgressMeter('BKP Media Detector', 3, 8, 'key', 'Loading Videos...',orientation='h',size=(100, 10)) == False: exit()
+    if sg.OneLineProgressMeter('BKP Media Detector', 3, 9, 'key', 'Loading Videos...',orientation='h',size=(100, 10)) == False: exit()
 
     # Multiprocess the video load function on all CPU cores available
     pool = Pool(maxtasksperchild=100)
@@ -464,7 +504,7 @@ if __name__ == '__main__':
     hashvalues, image_nps = zip(*final_images)
 
     # Update the progress indicator & logfile
-    if sg.OneLineProgressMeter('BKP Media Detector', 4, 8, 'key', 'Starting detection...',orientation='h',size=(100, 10)) == False: exit()
+    if sg.OneLineProgressMeter('BKP Media Detector', 4, 9, 'key', 'Starting detection...',orientation='h',size=(100, 10)) == False: exit()
     logfile.write("*" + str(datetime.now()) + ": Loading completed. Detecting...*\n")
 
     # Execute detection
@@ -481,12 +521,13 @@ if __name__ == '__main__':
     logfile.write("*Processed Videos: " + str(number_of_videos) + " (analyzed " + str(frames_per_second) + " frames per second, up to max. 100)*\n")
     logfile.write("*Applied models:\n")
     for y in range(0, len(graphlist)): logfile.write(graphlist[y] + "\n")
+    if FACE_MODEL: logfile.write("Face Detector\n")
     logfile.write("*Processing time: " + str(datetime.now() - startTime) + "*\n")
     logfile.flush()
     logfile.close()
 
     # Update progress indicator
-    sg.OneLineProgressMeter('BKP Media Detector', 8, 8, 'key', 'Detection finished',orientation='h',size=(100, 10))
+    sg.OneLineProgressMeter('BKP Media Detector', 9, 9, 'key', 'Detection finished',orientation='h',size=(100, 10))
 
 # Deliver final success pop up to user
 sg.Popup('The detection was successful',
