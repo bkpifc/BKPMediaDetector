@@ -5,6 +5,7 @@ Currently applied models:
 - Open Images (Inception-ResNet, SSD) - Detecting Objects, Persons, Animals - 300ms per image
 - AVA Model (F-RCNN ResNet 101) - Detection actions and interactions - 91ms per image
 - ISLogoDetector (ResNet 50) - Detecting IS Logos - 89ms per image
+- FaceDetection (MTCNN) - Detecting Faces - 90ms per image
 
 ## Data structure:
 - Repository
@@ -31,6 +32,7 @@ Currently applied models:
 ## Tips:
 - Make sure to use Tensorflow-GPU to leverage your GPU
 - Prepare your environment to make best use of CUDA, cuDNN and your GPU. Check Tensorflows build configuration guide to validate versions.
+- For help configuring your environment, just google your OS version including CUDA, cuDNN and Tensorflow
 
 For guidance on re-training the model, or to create a fully new tensorflow model, please see those various excellent postings or contact us directly: 
 
@@ -41,4 +43,5 @@ For guidance on re-training the model, or to create a fully new tensorflow model
 ## License:
 Release under Apache 2.0 license.
 Using input from Tensorflow (https://github.com/tensorflow/), the Open Images Project (https://storage.googleapis.com/openimages/web/extras.html) as well as the AVA Project (https://research.google.com/ava/download.html) all together released under Apache 2.0. Whereas no modification was done to the pre-trained model files, the actual detection script is my own work, relying though on certain python modules.
+Face Detector Module is released under MIT license.
 Feel free to use and adapt - feedback is appreciated.
