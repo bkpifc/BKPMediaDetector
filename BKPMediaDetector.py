@@ -2,7 +2,7 @@
 
 ######
 # General Detector
-# 26.04.2019
+# 06.12.2018 / Last Update: 31.05.2019
 # LRB
 # Adapted from Tensorflow Object Detection Sample Script
 ######
@@ -17,12 +17,14 @@ import cv2
 import magic
 import PySimpleGUI as sg
 import csv
+import imagehash
 from itertools import groupby
 from distutils.version import StrictVersion
 from PIL import Image
 from datetime import datetime
 from multiprocessing import Pool
 from Models.Face import detect_face
+from pathlib import Path
 
 
 startTime = datetime.now()
@@ -33,19 +35,27 @@ startTime = datetime.now()
 #
 ######
 
-sg.ChangeLookAndFeel('BluePurple')
+sg.ChangeLookAndFeel('Dark')
 
-layout = [[sg.Text('Please specify the folder holding the media data:')],
-          [sg.Input(), sg.FolderBrowse('Browse',initial_folder='/home')],
+layout = [[sg.Text('General Settings', font=("Helvetica",13), text_color='sea green')],
+          [sg.Text('Please specify the folder holding the media data:')],
+          [sg.Input(), sg.FolderBrowse('Browse',initial_folder=Path.home(),button_color=('black', 'grey'))],
           [sg.Text('Where shall I place the results?')],
-          [sg.Input(), sg.FolderBrowse('Browse',initial_folder='/home')],
+          [sg.Input(), sg.FolderBrowse('Browse',initial_folder=Path.home(),button_color=('black', 'grey'))],
           [sg.Text('Which things do you want to detect?')],
-          [sg.Checkbox('Objects/Persons', size=(15,1)),
+          [sg.Checkbox('Objects/Persons', size=(15,2)),
            sg.Checkbox('Actions'),
            sg.Checkbox('IS Logos'),
            sg.Checkbox('Faces')],
-          [sg.Text('Output Format:'), sg.Listbox(values=('Nuix', 'XWays', 'csv'), size=(30, 3))],
-          [sg.OK(), sg.Cancel()]]
+          [sg.Text('Output Format:'), sg.Listbox(values=('Nuix', 'XWays', 'csv'), size=(29, 3))],
+          [sg.Text('Video Settings', font=("Helvetica",13), text_color='sea green')],
+          [sg.Text('# of frames to be analyzed per Minute:',size=(36,0))],
+          [sg.Slider(range=(1,120), orientation='h', size=(29, 20), default_value=30)],
+          [sg.Text('Max. # of frames to be analyzed per Video:',size=(36,0))],
+          [sg.Slider(range=(1,500), orientation='h', size=(29,20), default_value=100)],
+          [sg.Text('Check for & discard similar frames?'),
+           sg.InputCombo(('Yes', 'No'),default_value='No', size=(10,2))],
+          [sg.OK(button_color=('black', 'sea green')), sg.Cancel(button_color=('black', 'grey'))]]
 
 layout_progress = [[sg.Text('Detection in progress')],
                    [sg.ProgressBar(10, orientation='h', size=(20, 20), key='progressbar')],
@@ -83,14 +93,23 @@ if StrictVersion(tf.__version__) < StrictVersion('1.9.0'):
   raise ImportError('Please upgrade your TensorFlow installation to v1.9.* or later!')
 
 # Defining multiple needed variables based on config file paths & adding object_detection directory to path
-PATH_TO_TEST_IMAGES_DIR = gui_input[1][0]
-PATH_TO_RESULTS = gui_input[1][1]
-PATH_TO_OBJECT_DETECTION_DIR = '/home/b/Programs/tensorflow/models/research'
-IMAGENAMES = os.listdir(PATH_TO_TEST_IMAGES_DIR)
-TEST_IMAGE_PATHS = [PATH_TO_TEST_IMAGES_DIR + '/' + i for i in IMAGENAMES]
-REPORT_FORMAT = gui_input[1][6]
+PATH_TO_INPUT = Path(gui_input[1][0])
+TEST_IMAGE_PATHS = Path.iterdir(PATH_TO_INPUT)
+number_of_input = 0
+for elements in Path.iterdir(PATH_TO_INPUT):
+    number_of_input += 1
+PATH_TO_RESULTS = Path(gui_input[1][1])
+PATH_TO_OBJECT_DETECTION_DIR = '/home/b/Programs/tensorflow/models/research' #PLACEHOLDER-tobereplaced
 sys.path.append(PATH_TO_OBJECT_DETECTION_DIR)
-frames_per_second = 0.25 #frames to analyze per second of video duration
+REPORT_FORMAT = gui_input[1][6]
+
+frames_per_second = gui_input[1][7] / 60
+max_frames_per_video = gui_input[1][8]
+video_sensitivity_text = gui_input[1][9]
+if video_sensitivity_text == "Yes":
+    video_sensitivity = 20
+else:
+    video_sensitivity = 0
 
 # Check which models to apply and load their label maps
 from object_detection.utils import label_map_util
@@ -99,24 +118,24 @@ indexlist = []
 
 MODEL1 = bool(gui_input[1][2])
 if MODEL1:
-    OPEN_IMAGES_GRAPH = 'Models/OpenImages/openimages.pb'
-    OPEN_IMAGES_LABELS = OPEN_IMAGES_GRAPH[:-3] + '.pbtxt'
+    OPEN_IMAGES_GRAPH = str(Path('Models/OpenImages/openimages.pb'))
+    OPEN_IMAGES_LABELS = str(OPEN_IMAGES_GRAPH)[:-3] + '.pbtxt'
     OPEN_IMAGES_INDEX = label_map_util.create_category_index_from_labelmap(OPEN_IMAGES_LABELS)
     graphlist.append(OPEN_IMAGES_GRAPH)
     indexlist.append(OPEN_IMAGES_INDEX)
 
 MODEL2 = bool(gui_input[1][3])
 if MODEL2:
-    AVA_GRAPH = 'Models/AVA/ava.pb'
-    AVA_LABELS = AVA_GRAPH[:-3] + '.pbtxt'
+    AVA_GRAPH = str(Path('Models/AVA/ava.pb'))
+    AVA_LABELS = str(AVA_GRAPH)[:-3] + '.pbtxt'
     AVA_INDEX = label_map_util.create_category_index_from_labelmap(AVA_LABELS)
     graphlist.append(AVA_GRAPH)
     indexlist.append(AVA_INDEX)
 
 MODEL3 = bool(gui_input[1][4])
 if MODEL3:
-    SPECIAL_DETECTOR_GRAPH = 'Models/ISLogos/frozen_inference_graph.pb'
-    SPECIAL_DETECTOR_LABELS = SPECIAL_DETECTOR_GRAPH[:-3] + '.pbtxt'
+    SPECIAL_DETECTOR_GRAPH = str(Path('Models/ISLogos/frozen_inference_graph.pb'))
+    SPECIAL_DETECTOR_LABELS = str(SPECIAL_DETECTOR_GRAPH)[:-3] + '.pbtxt'
     SPECIAL_DETECTOR_INDEX = label_map_util.create_category_index_from_labelmap(SPECIAL_DETECTOR_LABELS)
     graphlist.append(SPECIAL_DETECTOR_GRAPH)
     indexlist.append(SPECIAL_DETECTOR_INDEX)
@@ -133,10 +152,10 @@ FACE_MODEL = bool(gui_input[1][5])
 def load_image_into_numpy_array(image_path):
 
     try:
+        image_path = str(image_path)
         # Open, measure and convert image to RGB channels
         image = Image.open(image_path)
         (im_width, im_height) = image.size
-
         image = image.convert('RGB')
         np_array = np.array(image.getdata()).reshape(
                     (im_height, im_width, 3)).astype(np.uint8)
@@ -150,14 +169,11 @@ def load_image_into_numpy_array(image_path):
         f.close()
         hashvalue = hash_md5.hexdigest()
 
-
         return hashvalue, np_array
 
-
     # Throw errors to stdout
-    except IOError:
-        magictype = str(magic.from_file(image_path, mime=True))
-        print(image_path + " Type: " + magictype)
+    except IOError or OSError:
+        magictype = str(magic.from_file((image_path), mime=True))
         # If image file cannot be read, check if it is a video
         if magictype[:5] == 'video':
             # If so, return a video flag instead of numpy array
@@ -167,7 +183,6 @@ def load_image_into_numpy_array(image_path):
             flag = "ERROR"
 
         return image_path, flag
-
 
     except:
         logfile.write("General error with file: " + str(image_path) + " (" + str(magictype) + ")\n")
@@ -184,6 +199,7 @@ def load_image_into_numpy_array(image_path):
 def load_video_into_numpy_array(image_path):
 
     videoframes = []
+    old_hash = None
 
     # Loading the video via the OpenCV framework
     try:
@@ -194,17 +210,15 @@ def load_video_into_numpy_array(image_path):
         fps = int(vidcap.get(cv2.CAP_PROP_FPS))
         framecount = int(vidcap.get(cv2.CAP_PROP_FRAME_COUNT))
         analyze_rate = int(framecount / fps * frames_per_second)
-        if 0 < analyze_rate < 100:
+        if 0 < analyze_rate < max_frames_per_video:
             int(analyze_rate)
-        elif analyze_rate >= 100:
-            analyze_rate = 100 #Limiting maximum frames per video
+        elif analyze_rate >= max_frames_per_video:
+            analyze_rate = max_frames_per_video #Limiting maximum frames per video
         elif analyze_rate <= 0:
             videoerror = 'Unable to extract frames from video: ' + str(image_path) + '\n'
             return videoerror
 
-
-
-        # Hashing the image once
+        # Hashing the video once
         hash_md5 = hashlib.md5()
         with open(image_path, "rb") as f:
              for chunk in iter(lambda: f.read(4096), b""):
@@ -213,18 +227,22 @@ def load_video_into_numpy_array(image_path):
 
         # Extracting the frames from the video
         for percentile in range(0, analyze_rate): #analyze_rate):
-
             vidcap.set(cv2.CAP_PROP_POS_FRAMES, (framecount / analyze_rate) * percentile)
             success, extracted_frame = vidcap.read()
-
             extracted_frame = cv2.cvtColor(extracted_frame, cv2.COLOR_BGR2RGB)
 
             # And reshape them into a numpy array
             np_array = np.array(extracted_frame).reshape(
                 (im_height, im_width, 3)).astype(np.uint8)
 
-            cluster = hashvalue, np_array
-            videoframes.append(cluster)
+            if video_sensitivity > 0:
+                # Compare the frame with the previous one for similarity, and drop if similar
+                frame_to_check = Image.fromarray(np_array)
+                new_hash = imagehash.phash(frame_to_check)
+                if old_hash is None or (new_hash - old_hash > video_sensitivity):
+                    cluster = hashvalue, np_array
+                    videoframes.append(cluster)
+                    old_hash = new_hash
 
         vidcap.release()
 
@@ -237,7 +255,6 @@ def load_video_into_numpy_array(image_path):
     except:
         videoerror = 'General error processing video: ' + str(image_path) + '\n'
         return videoerror
-
 
 
 ######
@@ -254,16 +271,17 @@ def run_inference_for_multiple_images(images, hashvalues):
     errorcount = 0
 
     # Prepare results file with headers
-    detectionr = open(PATH_TO_RESULTS + "/Detection_Results.csv", 'w')
-    if REPORT_FORMAT[0] == 'Nuix':
-        detectionr.write("tag,searchterm\n")
-    else:
-        detectionr.write("hash,score,category\n")
-    detectionr.flush()
 
+    detectionresults_path = PATH_TO_RESULTS / 'Detection_Results.csv'
+
+    detectionresults = open(str(detectionresults_path), 'w')
+    if REPORT_FORMAT[0] == 'Nuix':
+        detectionresults.write("tag,searchterm\n")
+    else:
+        detectionresults.write("hash,score,category\n")
+    detectionresults.flush()
 
     for y in range(0, len(graphlist)):
-
         # Create TF Session with loaded graph
         detection_graph = tf.Graph()
         with detection_graph.as_default():
@@ -331,7 +349,7 @@ def run_inference_for_multiple_images(images, hashvalues):
                                     line = ",".join([category['name'], "md5:" + hashvalue])
                                 else:
                                     line = ",".join([hashvalue, scorestring, category['name']])
-                                detectionr.write(line + "\n")
+                                detectionresults.write(line + "\n")
 
                     except tf.errors.InvalidArgumentError:
                         errorcount += 1
@@ -355,7 +373,8 @@ def run_inference_for_multiple_images(images, hashvalues):
         with tf.Session() as sess:
 
             # read pnet, rnet, onet models from Models/Face directory
-            pnet, rnet, onet = detect_face.create_mtcnn(sess, 'Models/Face')
+            facemodel_path = Path('Models/Face')
+            pnet, rnet, onet = detect_face.create_mtcnn(sess, str(facemodel_path))
 
             # Inference for all images
             for index, image in enumerate(images):
@@ -369,7 +388,7 @@ def run_inference_for_multiple_images(images, hashvalues):
                             line = "Face,md5:" + hashvalue
                         else:
                             line = str(hashvalue) + "," + str(number_of_faces) + ",Faces"
-                        detectionr.write(line + "\n")
+                        detectionresults.write(line + "\n")
 
                 except tf.errors.InvalidArgumentError:
                     errorcount += 1
@@ -377,8 +396,8 @@ def run_inference_for_multiple_images(images, hashvalues):
 
         logfile.write("*" + str(datetime.now()) + ": Finished detection with face detection model*\n")
 
-    detectionr.flush()
-    detectionr.close()
+    detectionresults.flush()
+    detectionresults.close()
 
     return detectedLogos, errorcount
 
@@ -391,7 +410,11 @@ def run_inference_for_multiple_images(images, hashvalues):
 
 def createXWaysReport():
 
-    for key, rows in groupby(csv.reader(open(PATH_TO_RESULTS + "/Detection_Results.csv")),
+    detectionresults_path = str(PATH_TO_RESULTS / 'Detection_Results.csv')
+    xways_folder = PATH_TO_RESULTS / 'XWaysOutput'
+    if not xways_folder.exists(): os.mkdir(str(xways_folder))
+
+    for key, rows in groupby(csv.reader(open(detectionresults_path)),
                              lambda row: row[2]):
 
         # Replace special characters in categories
@@ -401,21 +424,23 @@ def createXWaysReport():
             key = str(key).replace("(", "")
             key = str(key).replace(")", "")
 
-            # Create a separate txt file for every detected category
-            with open(PATH_TO_RESULTS + "/%s.txt" % key, 'a') as rf:
+            key = key + '.txt'
+            detectionresults_single_path = xways_folder / key
+
+            with open(str(detectionresults_single_path), 'a') as rf:
 
                 for row in rows:
                     rf.write(row[0] + "\n")
                 rf.flush()
 
     # Get a list of all files in results directory
-    resultsfiles = os.listdir(PATH_TO_RESULTS)
+    resultsfiles = os.listdir(str(xways_folder))
 
     # Prepend them with MD5 for seamless import into XWays
     for file in resultsfiles:
         line = "md5"
         if file[-3:] == 'txt' and file != 'Logfile.txt':
-            with open(PATH_TO_RESULTS + '/' + file, 'r+') as ff:
+            with open(str(xways_folder / file), 'r+') as ff:
                 content = ff.read()
                 ff.seek(0,0)
                 ff.write(line.rstrip('\r\n') + '\n' + content)
@@ -431,7 +456,7 @@ if sg.OneLineProgressMeter('BKP Media Detector', 2, 9,  'key', 'Process started.
 
 
 # Create logfile
-logfile = open(PATH_TO_RESULTS + "/Logfile.txt", 'w')
+logfile = open(str(PATH_TO_RESULTS / 'Logfile.txt'), 'w')
 logfile.write('***DETECTION LOG***\n')
 logfile.write("*" + str(datetime.now()) + ': Process started. Loading images...*\n')
 
@@ -457,7 +482,6 @@ if __name__ == '__main__':
 
     # Check for the video flag
     for processed_image in processed_images:
-
         if str(processed_image[1]) == "VIDEO":
             # If present, populate the video list
             vidlist.append(processed_image[0])
@@ -494,7 +518,7 @@ if __name__ == '__main__':
             errors.append(video)
         if type(video) is list:
             final_images.extend(video)
-            number_of_videos =+ 1
+            number_of_videos += 1
 
     for error in errors:
         logfile.write(error)
@@ -515,10 +539,10 @@ if __name__ == '__main__':
         createXWaysReport()
 
     # Write process statistics to logfile
-    logfile.write("*Results: " + PATH_TO_RESULTS + "/Detection_Results.csv*\n")
-    logfile.write("*Total Amount of Files: " + str(len(TEST_IMAGE_PATHS)) + " (of which " + str(number_of_images + number_of_videos) + " where processed.)*\n")
+    logfile.write("*Results: " + str(PATH_TO_RESULTS / 'Detection_Results.csv*\n'))
+    logfile.write("*Total Amount of Files: " + str(number_of_input) + " (of which " + str(number_of_images + number_of_videos) + " where processed.)*\n")
     logfile.write("*Processed Images: " + str(number_of_images) + "*\n")
-    logfile.write("*Processed Videos: " + str(number_of_videos) + " (analyzed " + str(frames_per_second) + " frames per second, up to max. 100)*\n")
+    logfile.write("*Processed Videos: " + str(number_of_videos) + " (analyzed " + str(frames_per_second * 60) + " frames per minute, up to max. 100) with a " + video_sensitivity_text + " sensitivity.*\n")
     logfile.write("*Applied models:\n")
     for y in range(0, len(graphlist)): logfile.write(graphlist[y] + "\n")
     if FACE_MODEL: logfile.write("Face Detector\n")
