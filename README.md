@@ -1,5 +1,5 @@
 # BKP Media Detector
-This python script allows you to apply up to 4 different object detection models (in Frozen Graph Form - .pb). It does so in a folder full of images and / or video files. The input consists of a folder which contains all sorts of media files. The script then generates an output file with the hash-values (MD5) and the score of the media files where the system detected one of the "classes" in one of the applied models. It encompasses a GUI to select the input folder, the output folder, the models to apply (4 default ones) as well as the requested output format for further use with review tools. Selectable output format for ingestion into Nuix or X-Ways available.
+This application allows you to apply up to 4 different Tensorflow object detection models (in Frozen Graph Form - .pb). It does so in a folder full of images and / or video files. The input consists of a folder which contains all sorts of media files. The script then generates an output file with the hash-values (MD5) and the score of the media files where the system detected one of the "classes" in one of the applied models. It encompasses a GUI to select the input folder, the output folder, the models to apply (4 default ones) as well as the requested output format for further use with review tools. Selectable output format for ingestion into Nuix or X-Ways available.
 
 Currently applied models:
 - Open Images (Inception-ResNet, SSD) - Detecting Objects, Persons, Animals - 300ms per image
@@ -19,7 +19,7 @@ Currently applied models:
 - Python 3.5 (including Numpy, magic, PySimpleGUI, PIL, OpenCV)
 
 ## Usage:
-1) Download the script and the models files via [latest model release](https://github.com/bkpifc/BKPMediaDetector/releases)
+1) Download the script and the model files via [latest model release](https://github.com/bkpifc/BKPMediaDetector/releases)
 
 2) Prepare a directory containing images and videos to be processed
 
@@ -44,4 +44,5 @@ For guidance on re-training the model, or to create a fully new tensorflow model
 Release under Apache 2.0 license.
 Using input from Tensorflow (https://github.com/tensorflow/), the Open Images Project (https://storage.googleapis.com/openimages/web/extras.html) as well as the AVA Project (https://research.google.com/ava/download.html) all together released under Apache 2.0. Whereas no modification was done to the pre-trained model files, the actual detection script is my own work, relying though on certain python modules.
 Face Detector Module is released under MIT license, based on David Sandberg's adaption of Facenet/MTCNN.
+ImageHash is released under BSD 2-Clause by Johannes Buchner
 Feel free to use and adapt - feedback is appreciated.
