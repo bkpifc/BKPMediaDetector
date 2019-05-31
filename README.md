@@ -16,7 +16,7 @@ Currently applied models:
 ## Dependencies:
 - Ubuntu 16.04 / 18.04
 - Installed Tensorflow with ObjectDetection API: [Installation Instructions](https://github.com/tensorflow/models/blob/master/research/object_detection/g3doc/installation.md)
-- Python 3.5 (including Numpy, magic, PySimpleGUI, PIL, OpenCV)
+- Python 3.5 (including Numpy, magic, PySimpleGUI, PIL, OpenCV, ImageHash)
 
 ## Usage:
 1) Download the script and the model files via [latest model release](https://github.com/bkpifc/BKPMediaDetector/releases)
