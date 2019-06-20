@@ -1,0 +1,12 @@
+ImageHash==4.0
+imageio==2.5.0
+lxml==3.5.0
+matplotlib==3.0.2
+numpy==1.16.2
+opencv-python==3.4.4.19
+Pillow==5.3.0
+protobuf==3.6.1
+PySimpleGUI==3.26.0
+PyWavelets==1.0.3
+scipy==1.2.1
+
