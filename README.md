@@ -10,13 +10,18 @@ Currently applied models:
 ## Data structure:
 - Repository
   - Script (BKPMediaDetector.py)
+  - Requirements.txt
 - Models via Releases (frozen TF graphs, pbtxt files, current version of script)
 
 
-## Dependencies:
-- Ubuntu 16.04 / 18.04
+## Dependencies & Installation:
+- Ubuntu 16.04 / 18.04 OR Windows 10 
 - Installed Tensorflow with ObjectDetection API: [Installation Instructions](https://github.com/tensorflow/models/blob/master/research/object_detection/g3doc/installation.md)
-- Python 3.5 (including Numpy, magic, PySimpleGUI, PIL, OpenCV, ImageHash)
+- Python 3.5 (including Numpy, magic, PySimpleGUI, PIL, OpenCV, ImageHash) - 
+- Windows Only: Installed VisualStudio Build Tools 
+- Windows Only: Download & compile the protocol buffers in Version 3.4 from [here](https://github.com/protocolbuffers/protobuf/releases/tag/v3.4.0) and install them by navigating to the "tensorflow/models/research" folder and executing the following command: 
+
+`protoc.exe object_detection\protos\*.proto --python_out=.`
 
 ## Usage:
 1) Download the script and the model files via [latest model release](https://github.com/bkpifc/BKPMediaDetector/releases)
