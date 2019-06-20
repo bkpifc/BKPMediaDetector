@@ -2,11 +2,10 @@
 
 ######
 # General Detector
-# 06.12.2018 / Last Update: 31.05.2019
+# 06.12.2018 / Last Update: 07.06.2019
 # LRB
 # Adapted from Tensorflow Object Detection Sample Script
 ######
-
 
 import numpy as np
 import os
@@ -26,121 +25,6 @@ from multiprocessing import Pool
 from Models.Face import detect_face
 from pathlib import Path
 
-
-startTime = datetime.now()
-
-######
-#
-# Collecting parameters via GUI
-#
-######
-
-sg.ChangeLookAndFeel('Dark')
-
-layout = [[sg.Text('General Settings', font=("Helvetica",13), text_color='sea green')],
-          [sg.Text('Please specify the folder holding the media data:')],
-          [sg.Input(), sg.FolderBrowse('Browse',initial_folder=Path.home(),button_color=('black', 'grey'))],
-          [sg.Text('Where shall I place the results?')],
-          [sg.Input(), sg.FolderBrowse('Browse',initial_folder=Path.home(),button_color=('black', 'grey'))],
-          [sg.Text('Which things do you want to detect?')],
-          [sg.Checkbox('Objects/Persons', size=(15,2)),
-           sg.Checkbox('Actions'),
-           sg.Checkbox('IS Logos'),
-           sg.Checkbox('Faces')],
-          [sg.Text('Output Format:'), sg.Listbox(values=('Nuix', 'XWays', 'csv'), size=(29, 3))],
-          [sg.Text('Video Settings', font=("Helvetica",13), text_color='sea green')],
-          [sg.Text('# of frames to be analyzed per Minute:',size=(36,0))],
-          [sg.Slider(range=(1,120), orientation='h', size=(29, 20), default_value=30)],
-          [sg.Text('Max. # of frames to be analyzed per Video:',size=(36,0))],
-          [sg.Slider(range=(1,500), orientation='h', size=(29,20), default_value=100)],
-          [sg.Text('Check for & discard similar frames?'),
-           sg.InputCombo(('Yes', 'No'),default_value='No', size=(10,2))],
-          [sg.OK(button_color=('black', 'sea green')), sg.Cancel(button_color=('black', 'grey'))]]
-
-layout_progress = [[sg.Text('Detection in progress')],
-                   [sg.ProgressBar(10, orientation='h', size=(20, 20), key='progressbar')],
-                   [sg.Cancel()]]
-
-
-gui_input = sg.Window('BKP Media Detector').Layout(layout).Read()
-
-error = False
-
-for element in gui_input[1]:
-    if element == '':
-        error = True
-
-if error == True:
-    sg.Popup('You have not populated all fields. Aborting!',title='Error',button_color=('black', 'red'),background_color=('grey'))
-    exit()
-
-
-
-######
-#
-# Model and Variable Preparation
-#
-######
-
-if sg.OneLineProgressMeter('BKP Media Detector', 1, 9,  'key', 'Initializing variables & parameters...',orientation='h',size=(100, 10)) == False: exit()
-
-# Variable to determine minimum GPU Processor requirement & to disable TF log output
-#os.environ['TF_MIN_GPU_MULTIPROCESSOR_COUNT'] = '5'
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-
-# Validating TF version
-if StrictVersion(tf.__version__) < StrictVersion('1.9.0'):
-  raise ImportError('Please upgrade your TensorFlow installation to v1.9.* or later!')
-
-# Defining multiple needed variables based on config file paths & adding object_detection directory to path
-PATH_TO_INPUT = Path(gui_input[1][0])
-TEST_IMAGE_PATHS = Path.iterdir(PATH_TO_INPUT)
-number_of_input = 0
-for elements in Path.iterdir(PATH_TO_INPUT):
-    number_of_input += 1
-PATH_TO_RESULTS = Path(gui_input[1][1])
-PATH_TO_OBJECT_DETECTION_DIR = '/home/b/Programs/tensorflow/models/research' #PLACEHOLDER-tobereplaced
-sys.path.append(PATH_TO_OBJECT_DETECTION_DIR)
-REPORT_FORMAT = gui_input[1][6]
-
-frames_per_second = gui_input[1][7] / 60
-max_frames_per_video = gui_input[1][8]
-video_sensitivity_text = gui_input[1][9]
-if video_sensitivity_text == "Yes":
-    video_sensitivity = 20
-else:
-    video_sensitivity = 0
-
-# Check which models to apply and load their label maps
-from object_detection.utils import label_map_util
-graphlist = []
-indexlist = []
-
-MODEL1 = bool(gui_input[1][2])
-if MODEL1:
-    OPEN_IMAGES_GRAPH = str(Path('Models/OpenImages/openimages.pb'))
-    OPEN_IMAGES_LABELS = str(OPEN_IMAGES_GRAPH)[:-3] + '.pbtxt'
-    OPEN_IMAGES_INDEX = label_map_util.create_category_index_from_labelmap(OPEN_IMAGES_LABELS)
-    graphlist.append(OPEN_IMAGES_GRAPH)
-    indexlist.append(OPEN_IMAGES_INDEX)
-
-MODEL2 = bool(gui_input[1][3])
-if MODEL2:
-    AVA_GRAPH = str(Path('Models/AVA/ava.pb'))
-    AVA_LABELS = str(AVA_GRAPH)[:-3] + '.pbtxt'
-    AVA_INDEX = label_map_util.create_category_index_from_labelmap(AVA_LABELS)
-    graphlist.append(AVA_GRAPH)
-    indexlist.append(AVA_INDEX)
-
-MODEL3 = bool(gui_input[1][4])
-if MODEL3:
-    SPECIAL_DETECTOR_GRAPH = str(Path('Models/ISLogos/frozen_inference_graph.pb'))
-    SPECIAL_DETECTOR_LABELS = str(SPECIAL_DETECTOR_GRAPH)[:-3] + '.pbtxt'
-    SPECIAL_DETECTOR_INDEX = label_map_util.create_category_index_from_labelmap(SPECIAL_DETECTOR_LABELS)
-    graphlist.append(SPECIAL_DETECTOR_GRAPH)
-    indexlist.append(SPECIAL_DETECTOR_INDEX)
-
-FACE_MODEL = bool(gui_input[1][5])
 
 ######
 #
@@ -212,7 +96,7 @@ def load_video_into_numpy_array(image_path):
         analyze_rate = int(framecount / fps * frames_per_second)
         if 0 < analyze_rate < max_frames_per_video:
             int(analyze_rate)
-        elif analyze_rate >= max_frames_per_video:
+        elif analyze_rate >= int(max_frames_per_video):
             analyze_rate = max_frames_per_video #Limiting maximum frames per video
         elif analyze_rate <= 0:
             videoerror = 'Unable to extract frames from video: ' + str(image_path) + '\n'
@@ -243,6 +127,9 @@ def load_video_into_numpy_array(image_path):
                     cluster = hashvalue, np_array
                     videoframes.append(cluster)
                     old_hash = new_hash
+            else:
+                cluster = hashvalue, np_array
+                videoframes.append(cluster)
 
         vidcap.release()
 
@@ -271,9 +158,7 @@ def run_inference_for_multiple_images(images, hashvalues):
     errorcount = 0
 
     # Prepare results file with headers
-
     detectionresults_path = PATH_TO_RESULTS / 'Detection_Results.csv'
-
     detectionresults = open(str(detectionresults_path), 'w')
     if REPORT_FORMAT[0] == 'Nuix':
         detectionresults.write("tag,searchterm\n")
@@ -448,20 +333,131 @@ def createXWaysReport():
 
 ######
 #
-# Main program function which first loads images and then starts detection
+# Main program function
+# First initiates required parameters and variables, then loads the GUI
+# After which the image and video load functions are triggered based on the input parameters
+# Finally, the detection is executed and results written to the place requested
 #
 ######
 
-if sg.OneLineProgressMeter('BKP Media Detector', 2, 9,  'key', 'Process started. Loading images...',orientation='h',size=(100, 10)) == False: exit()
-
-
-# Create logfile
-logfile = open(str(PATH_TO_RESULTS / 'Logfile.txt'), 'w')
-logfile.write('***DETECTION LOG***\n')
-logfile.write("*" + str(datetime.now()) + ': Process started. Loading images...*\n')
-
 # Prevent execution when externally called
 if __name__ == '__main__':
+
+    startTime = datetime.now()
+
+    ######
+    # Collecting parameters via GUI
+    ######
+
+    sg.ChangeLookAndFeel('Dark')
+
+    layout = [[sg.Text('General Settings', font=("Helvetica", 13), text_color='sea green')],
+              [sg.Text('Please specify the folder holding the media data:')],
+              [sg.Input(), sg.FolderBrowse('Browse', initial_folder=Path.home(), button_color=('black', 'grey'))],
+              [sg.Text('Where shall I place the results?')],
+              [sg.Input(), sg.FolderBrowse('Browse', initial_folder=Path.home(), button_color=('black', 'grey'))],
+              [sg.Text('Which things do you want to detect?')],
+              [sg.Checkbox('Objects/Persons', size=(15, 2)),
+               sg.Checkbox('Actions'),
+               sg.Checkbox('IS Logos'),
+               sg.Checkbox('Faces')],
+              [sg.Text('Output Format:'), sg.Listbox(values=('Nuix', 'XWays', 'csv'), size=(29, 3))],
+              [sg.Text('Video Settings', font=("Helvetica", 13), text_color='sea green')],
+              [sg.Text('# of frames to be analyzed per Minute:', size=(36, 0))],
+              [sg.Slider(range=(1, 120), orientation='h', size=(29, 20), default_value=30)],
+              [sg.Text('Max. # of frames to be analyzed per Video:', size=(36, 0))],
+              [sg.Slider(range=(1, 500), orientation='h', size=(29, 20), default_value=100)],
+              [sg.Text('Check for & discard similar frames?'),
+               sg.InputCombo(('Yes', 'No'), default_value='No', size=(10, 2))],
+              [sg.OK(button_color=('black', 'sea green')), sg.Cancel(button_color=('black', 'grey'))]]
+
+    layout_progress = [[sg.Text('Detection in progress')],
+                       [sg.ProgressBar(10, orientation='h', size=(20, 20), key='progressbar')],
+                       [sg.Cancel()]]
+
+    # Render the GUI
+    gui_input = sg.Window('BKP Media Detector').Layout(layout).Read()
+
+    error = False
+
+    for element in gui_input[1]:
+        if element == '':
+            error = True
+
+    if error == True:
+        sg.Popup('You have not populated all fields. Aborting!', title='Error', button_color=('black', 'red'), background_color=('grey'))
+        exit()
+
+    # Initiating progress meter
+    if sg.OneLineProgressMeter('BKP Media Detector', 1, 9, 'key', 'Initializing variables & parameters...', orientation='h', size=(100, 10)) == False:
+        exit()
+
+    # Variable to determine minimum GPU Processor requirement & to disable TF log output
+    # os.environ['TF_MIN_GPU_MULTIPROCESSOR_COUNT'] = '5'
+    os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+
+    # Validating TF version
+    if StrictVersion(tf.__version__) < StrictVersion('1.9.0'):
+        raise ImportError('Please upgrade your TensorFlow installation to v1.9.* or later!')
+
+    # Defining multiple needed variables based on GUI input & adding object_detection directory to path
+    PATH_TO_INPUT = Path(gui_input[1][0])
+    TEST_IMAGE_PATHS = Path.iterdir(PATH_TO_INPUT)
+    number_of_input = 0
+    for elements in Path.iterdir(PATH_TO_INPUT):
+        number_of_input += 1
+    PATH_TO_RESULTS = Path(gui_input[1][1])
+    PATH_TO_OBJECT_DETECTION_DIR = '/home/b/Programs/tensorflow/models/research'  # PLACEHOLDER-tobereplacedWithPathtoDirectory
+    sys.path.append(PATH_TO_OBJECT_DETECTION_DIR)
+    REPORT_FORMAT = gui_input[1][6]
+    frames_per_second = gui_input[1][7] / 60
+    max_frames_per_video = gui_input[1][8]
+    video_sensitivity_text = gui_input[1][9]
+    if video_sensitivity_text == "Yes":
+        video_sensitivity = 20
+    else:
+        video_sensitivity = 0
+
+    # Check which models to apply and load their corresponding label maps
+    from object_detection.utils import label_map_util
+
+    graphlist = []
+    indexlist = []
+
+    MODEL1 = bool(gui_input[1][2])
+    if MODEL1:
+        OPEN_IMAGES_GRAPH = str(Path('Models/OpenImages/openimages.pb'))
+        OPEN_IMAGES_LABELS = str(OPEN_IMAGES_GRAPH)[:-3] + '.pbtxt'
+        OPEN_IMAGES_INDEX = label_map_util.create_category_index_from_labelmap(OPEN_IMAGES_LABELS)
+        graphlist.append(OPEN_IMAGES_GRAPH)
+        indexlist.append(OPEN_IMAGES_INDEX)
+
+    MODEL2 = bool(gui_input[1][3])
+    if MODEL2:
+        AVA_GRAPH = str(Path('Models/AVA/ava.pb'))
+        AVA_LABELS = str(AVA_GRAPH)[:-3] + '.pbtxt'
+        AVA_INDEX = label_map_util.create_category_index_from_labelmap(AVA_LABELS)
+        graphlist.append(AVA_GRAPH)
+        indexlist.append(AVA_INDEX)
+
+    MODEL3 = bool(gui_input[1][4])
+    if MODEL3:
+        SPECIAL_DETECTOR_GRAPH = str(Path('Models/ISLogos/islogos.pb'))
+        SPECIAL_DETECTOR_LABELS = str(SPECIAL_DETECTOR_GRAPH)[:-3] + '.pbtxt'
+        SPECIAL_DETECTOR_INDEX = label_map_util.create_category_index_from_labelmap(SPECIAL_DETECTOR_LABELS)
+        graphlist.append(SPECIAL_DETECTOR_GRAPH)
+        indexlist.append(SPECIAL_DETECTOR_INDEX)
+
+    FACE_MODEL = bool(gui_input[1][5])
+
+    # Update the progress indicator
+    if sg.OneLineProgressMeter('BKP Media Detector', 2, 9, 'key', 'Process started. Loading images...', orientation='h', size=(100, 10)) == False:
+        exit()
+
+    # Create logfile
+    logfile = open(str(PATH_TO_RESULTS / 'Logfile.txt'), 'w')
+    logfile.write('***DETECTION LOG***\n')
+    logfile.write("*" + str(datetime.now()) + ': Process started. Loading images...*\n')
 
     # Initiate needed variables
     vidlist = []
@@ -553,9 +549,9 @@ if __name__ == '__main__':
     # Update progress indicator
     sg.OneLineProgressMeter('BKP Media Detector', 9, 9, 'key', 'Detection finished',orientation='h',size=(100, 10))
 
-# Deliver final success pop up to user
-sg.Popup('The detection was successful',
-         'The results are placed here:',
-         'Path: "{}"'.format(PATH_TO_RESULTS))
+    # Deliver final success pop up to user
+    sg.Popup('The detection was successful',
+             'The results are placed here:',
+             'Path: "{}"'.format(str(PATH_TO_RESULTS)))
 
 
