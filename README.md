@@ -6,7 +6,7 @@ Currently applied models:
 - AVA Model (F-RCNN ResNet 101) - Detection actions and interactions - 91ms per image
 - ISLogoDetector (ResNet 50) - Detecting IS Logos - 89ms per image
 - FaceDetection (MTCNN) - Detecting Faces - 90ms per image
-- FaceRecognition - Recognizing a known Face - <100ms per image
+- FaceRecognition - Recognizing known Faces - <100ms per image
 
 ## Data structure:
 - Repository
