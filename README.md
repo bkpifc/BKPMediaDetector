@@ -1,11 +1,12 @@
 # BKP Media Detector
-This application allows you to apply up to 4 different Tensorflow object detection models (in Frozen Graph Form - .pb). It does so in a folder full of images and / or video files. The input consists of a folder which contains all sorts of media files. The script then generates an output file with the hash-values (MD5) and the score of the media files where the system detected one of the "classes" in one of the applied models. It encompasses a GUI to select the input folder, the output folder, the models to apply (4 default ones) as well as the requested output format for further use with review tools. Selectable output format for ingestion into Nuix or X-Ways available.
+This application allows you to apply up to 4 different Tensorflow object detection models (in Frozen Graph Form - .pb). It does so in a folder full of images and / or video files. The input consists of a folder which contains all sorts of media files. The script then generates an output file with the hash-values (MD5) and the score of the media files where the system detected one of the "classes" in one of the applied models. It encompasses a GUI to select the input folder, the output folder, the models to apply (5 default ones) as well as the requested output format for further use with review tools. Selectable output format for ingestion into Nuix or X-Ways available.
 
 Currently applied models:
 - Open Images (Inception-ResNet, SSD) - Detecting Objects, Persons, Animals - 300ms per image
 - AVA Model (F-RCNN ResNet 101) - Detection actions and interactions - 91ms per image
 - ISLogoDetector (ResNet 50) - Detecting IS Logos - 89ms per image
 - FaceDetection (MTCNN) - Detecting Faces - 90ms per image
+- FaceRecognition - Recognizing a known Face - <100ms per image
 
 ## Data structure:
 - Repository
