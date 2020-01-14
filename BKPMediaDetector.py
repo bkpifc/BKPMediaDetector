@@ -475,9 +475,9 @@ if __name__ == '__main__':
 
     layout = [[sg.Text('General Settings', font=("Helvetica", 13), text_color='sea green')],
               [sg.Text('Please specify the folder holding the media data:')],
-              [sg.Input(), sg.FolderBrowse('Browse', initial_folder='/home/b/Desktop/TestBilder', button_color=('black', 'grey'))], #Path.home() = Initial folder
+              [sg.Input(), sg.FolderBrowse('Browse', initial_folder='', button_color=('black', 'grey'))], #Path.home() = Initial folder
               [sg.Text('Where shall I place the results?')],
-              [sg.Input(), sg.FolderBrowse('Browse', initial_folder='/home/b/Desktop/TestResults', button_color=('black', 'grey'))], #Path.home()
+              [sg.Input(), sg.FolderBrowse('Browse', initial_folder='', button_color=('black', 'grey'))], #Path.home()
               [sg.Text('Which things do you want to detect?')],
               [sg.Checkbox('Objects/Persons', size=(15, 2)),
                sg.Checkbox('Actions'),
@@ -494,7 +494,7 @@ if __name__ == '__main__':
                sg.InputCombo(('Yes', 'No'), default_value='No', size=(10, 2))],
               [sg.Text('Face Recognition', font=("Helvetica", 13), text_color='sea green')],
               [sg.Text('Specify folder with known faces (if FaceReq selected): ')],
-              [sg.Input(), sg.FolderBrowse('Browse', initial_folder='/home/b/Desktop/known', button_color=('black', 'grey'))],
+              [sg.Input(), sg.FolderBrowse('Browse', initial_folder='', button_color=('black', 'grey'))],
               [sg.Text('Specify face recognition tolerance (Default: 60%):', size=(48, 0))],
               [sg.Slider(range=(0, 100), orientation='h', size=(29, 20), default_value=60)],
               [sg.Checkbox('Output detected faces as jpg', size=(25, 2))],
