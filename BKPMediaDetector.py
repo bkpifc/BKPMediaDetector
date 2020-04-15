@@ -2,7 +2,7 @@
 
 ######
 # General Detector
-# 06.12.2018 / Last Update: 02.10.2019
+# 06.12.2018 / Last Update: 09.04.2020
 # LRB
 ######
 
@@ -17,6 +17,7 @@ import PySimpleGUI as sg
 import csv
 import imagehash
 import face_recognition
+import subprocess
 from itertools import groupby
 from distutils.version import StrictVersion
 from PIL import Image
@@ -26,6 +27,7 @@ from time import gmtime
 from multiprocessing import Pool
 from Models.Face import detect_face
 from pathlib import Path
+from openvino.inference_engine import IENetwork, IECore
 
 ######
 # Worker function to check the input provided via the GUI
@@ -35,14 +37,14 @@ def validateInput(gui_input):
     error = False
 
     # Validate input
-    for element in gui_input[1][0:10]:
+    for element in gui_input[1][0:7]:
         if element == '' or []:
             error = True
 
-    if gui_input[0] == "Cancel" or len(gui_input[1][7]) == 0:
+    if gui_input[0] == "Cancel" or len(gui_input[1][8]) == 0:
         error = True
 
-    if bool(gui_input[1][6]) == True and gui_input[1][11] == "":
+    if bool(gui_input[1][5]) == True and gui_input[1][12] == "":
         error = True
 
     if error == True:
@@ -53,7 +55,7 @@ def validateInput(gui_input):
 # Worker function to update the progress bar
 ######
 def updateProgressMeter(step, customText):
-    if sg.OneLineProgressMeter('BKP Media Detector', step, 10, 'key', customText, orientation='h', size=(100, 10)) == False:
+    if sg.OneLineProgressMeter('BKP Media Detector', step, 11, 'key', customText, orientation='h', size=(100, 11)) == False:
         exit()
 
 ######
@@ -113,6 +115,30 @@ def load_image_into_numpy_array(image_path):
         logfile.write("General error with file: " + str(image_path) + " (" + str(magictype) + ")\n")
 
 
+def check_video_orientation(image_path):
+
+    # Function to check video rotation with ffprobe and return corresponding CV2 rotation code
+    try:
+        cmnd = ['ffprobe', '-loglevel', 'error', '-select_streams', 'v:0', '-show_entries', 'stream_tags=rotate', '-of',
+                'default=nw=1:nk=1', image_path]
+        p = subprocess.Popen(cmnd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        out, err = p.communicate()
+        orientation = out.decode('utf-8')
+
+        if orientation == '':
+            rotation = 3
+        elif int(orientation) == 180:
+            rotation = 1
+        elif int(orientation) == 90:
+            rotation = 0
+        else:
+            rotation = 2
+
+        return rotation
+
+    except:
+        logfile.write("Cannot determine video rotation: " + str(image_path) + "\n")
+
 ######
 # Worker function to prepare and reshape the input videos to a Numpy array
 # and to calculate the MD5 hashes of them.
@@ -122,12 +148,20 @@ def load_video_into_numpy_array(image_path):
 
     videoframes = []
     old_hash = None
-
     # Loading the video via the OpenCV framework
     try:
+        rotation = check_video_orientation(image_path)
         vidcap = cv2.VideoCapture(image_path)
         im_width = int(vidcap.get(cv2.CAP_PROP_FRAME_WIDTH))
         im_height = int(vidcap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+        # Switch height/width if video is to be rotated 90/270 degrees
+        if rotation == 0 or rotation == 2:
+            im_width_new = im_height
+            im_height_new = im_width
+            im_width = im_width_new
+            im_height = im_height_new
+
         # Calculating frames per second, total frame count and analyze rate
         fps = int(vidcap.get(cv2.CAP_PROP_FPS))
         framecount = int(vidcap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -151,10 +185,12 @@ def load_video_into_numpy_array(image_path):
         for percentile in range(0, analyze_rate): #analyze_rate):
             vidcap.set(cv2.CAP_PROP_POS_FRAMES, (framecount / analyze_rate) * percentile)
             success, extracted_frame = vidcap.read()
+            if rotation != 3:
+                extracted_frame = cv2.rotate(extracted_frame, rotation)
+
             extracted_frame = cv2.cvtColor(extracted_frame, cv2.COLOR_BGR2RGB)
             timecode = ((framecount / analyze_rate) * percentile) / fps
             timecode = str(strftime("%H:%M:%S", gmtime(timecode)))
-
 
             # And reshape them into a numpy array
             np_array = np.array(extracted_frame).reshape(
@@ -185,14 +221,10 @@ def load_video_into_numpy_array(image_path):
         return videoerror
 
 ######
-# Detection within loaded images
+# Detection within loaded images with Tensorflow framework
 # Creation of output file with hashes, detection scores and class
 ######
 def run_inference_for_multiple_images(image_paths, images, hashvalues):
-
-    # Initiate variables
-    detectedLogos = 0
-    errorcount = 0
 
     # Open the results file again
     detectionresults_path = PATH_TO_RESULTS / 'Detection_Results.csv'
@@ -207,7 +239,7 @@ def run_inference_for_multiple_images(image_paths, images, hashvalues):
             logfile.write("*" + str(datetime.now()) + ": \tStarting detection with model " + str(y + 1) + " of " + str(len(graphlist)) + "*\n")
 
             # Update progress indicator
-            updateProgressMeter(6 + y, 'Detecting with model {}'.format(graphlist[y]))
+            updateProgressMeter(7 + y, 'Detecting with model {}'.format(graphlist[y]))
 
             # Load the respective detetion graph from file
             with tf.gfile.GFile(graphlist[y], 'rb') as fid:
@@ -270,61 +302,276 @@ def run_inference_for_multiple_images(image_paths, images, hashvalues):
                                 detectionresults.write(line + "\n")
 
                     except tf.errors.InvalidArgumentError:
-                        errorcount += 1
+
                         logfile.write("Unable to process file dimensions of file with hash: \t" + str(hashvalue) + "\n")
 
                 logfile.write("*" + str(datetime.now()) + ": \tFinished detection with model " + str(y + 1) + "*\n")
 
+    detectionresults.flush()
+    detectionresults.close()
 
-    # Executing Face Detector in a slightly different process if selected
-    if FACE_MODEL:
+######
+# Detect and count faces in loaded images
+# Prepare and call age/gender detection once done
+######
+def faceDetection(image_paths, images, hashvalues):
 
-        # Updating progress bar and logfile
-        updateProgressMeter(8, 'Detecting with Face Detector')
-        logfile.write("*" + str(datetime.now()) + ": \tStarting detection with face detection model*\n")
+    detectionresults_path = PATH_TO_RESULTS / 'Detection_Results.csv'
+    detectionresults = open(str(detectionresults_path), 'a')
 
-        # Applying constants as defined in Facenet
-        minsize = 20
-        threshold = [0.6, 0.7, 0.7]
-        factor = 0.709
+    # Updating progress bar and logfile
+    updateProgressMeter(10, 'Detecting with Face/Age/Gender Detector')
+    logfile.write("*" + str(datetime.now()) + ": \tStarting detection with face/age/gender detection model*\n")
 
-        # Creating different TF Session
-        with tf.Session() as sess:
+    # Applying constants as defined in Facenet
+    minsize = 20
+    threshold = [0.6, 0.7, 0.7]
+    factor = 0.709
 
-            # read pnet, rnet, onet models from Models/Face directory
-            facemodel_path = Path('Models/Face')
-            pnet, rnet, onet = detect_face.create_mtcnn(sess, str(facemodel_path))
+    # Creating different TF Session
+    with tf.Session() as sess:
 
-            # Inference for all images
-            for index, image in enumerate(images):
-                try:
-                    bounding_boxes, _ = detect_face.detect_face(image, minsize, pnet, rnet, onet, threshold, factor)
-                    # If face detected, writing output to results file
-                    if not len(bounding_boxes) == 0:
-                        hashvalue = hashvalues[index]
-                        number_of_faces = len(bounding_boxes)
-                        if REPORT_FORMAT[0] == 'Nuix':
-                            line = "Face,md5:" + hashvalue
-                        else:
-                            line = str(Path(image_paths[index]).name) + "," + str(hashvalue) + "," + str(number_of_faces) + ",Faces"
-                        detectionresults.write(line + "\n")
+        # read pnet, rnet, onet models from Models/Face directory
+        facemodel_path = Path('Models/Face')
+        pnet, rnet, onet = detect_face.create_mtcnn(sess, str(facemodel_path))
 
-                except tf.errors.InvalidArgumentError:
-                    errorcount += 1
-                    logfile.write("Unable to detect faces in file with hash: \t" + str(hashvalue) + "\n")
+        # Helperlists for age/gender detection
+        facelist = []
+        imagelist = []
 
-        logfile.write("*" + str(datetime.now()) + ": \tFinished detection with face detection model*\n")
+        # Inference for all images
+        for index, image in enumerate(images):
+
+            try:
+                bounding_boxes, _ = detect_face.detect_face(image, minsize, pnet, rnet, onet, threshold, factor)
+                nrof_faces = bounding_boxes.shape[0]
+
+                # If a face was detected, go on
+                if nrof_faces > 0:
+                    detectedFaces = bounding_boxes[:, 0:4]
+                    detectedFacesArray = []
+                    img_size = np.asarray(image.shape)[0:2]
+
+                    if nrof_faces > 1:
+                        for single_face in range(nrof_faces):
+                            detectedFacesArray.append(np.squeeze(detectedFaces[single_face]))
+                    else:
+                        detectedFacesArray.append(np.squeeze(detectedFaces))
+
+                    # Crop the detected face and add it to the list to conduct age/gender identification
+                    for x, detectedFaces in enumerate(detectedFacesArray):
+                        detectedFaces = np.squeeze(detectedFaces)
+                        bb = np.zeros(4, dtype=np.int32)
+                        bb[0] = np.maximum(detectedFaces[0], 0)
+                        bb[1] = np.maximum(detectedFaces[1], 0)
+                        bb[2] = np.minimum(detectedFaces[2], img_size[1])
+                        bb[3] = np.minimum(detectedFaces[3], img_size[0])
+                        cropped_Face = image[bb[1]:bb[3], bb[0]:bb[2], :]
+                        facelist.append(cropped_Face)
+                        imagelist.append(index)
+
+                # Write the results of the face detection into the resultsfile
+                if not len(bounding_boxes) == 0:
+                    hashvalue = hashvalues[index]
+                    number_of_faces = len(bounding_boxes)
+                    if REPORT_FORMAT[0] == 'Nuix':
+                        line = "Face,md5:" + hashvalue
+                    else:
+                        line = str(Path(image_paths[index]).name) + "," + str(hashvalue) + ",FACES," + str(
+                            number_of_faces) + "Faces"
+
+                    detectionresults.write(line + "\n")
+
+            except tf.errors.InvalidArgumentError:
+                errorcount += 1
+                logfile.write("Unable to detect faces in file with hash: \t" + str(hashvalue) + "\n")
+
+        # Conduct age/gender recognition based on the list of detected & cropped faces
+        if len(facelist) != 0:
+            age_gender_detection(imagelist, facelist, hashvalues, image_paths)
+
+    logfile.write("*" + str(datetime.now()) + ": \tFinished detection with face/age/gender detection model*\n")
 
     detectionresults.flush()
     detectionresults.close()
 
-    return detectedLogos, errorcount
+######
+# Detection with the OPEN VINO Framework
+# Evaluate Age & Gender based on input faces
+######
+def age_gender_detection(imagelist, facelist, hashvalues, image_paths):
+
+    # Acquire the age-gender detection model
+    model_path = Path('Models/OpenVINO/age-gender')
+    model_xml = str(model_path / 'model.xml')
+    model_bin = str(model_path / 'model.bin')
+
+    # Reopen the results file
+    detectionresults_path = PATH_TO_RESULTS / 'Detection_Results.csv'
+    detectionresults = open(str(detectionresults_path), 'a')
+
+    # Plugin initialization for specified device and load extensions library if specified
+    ie = IECore()
+
+    # Read IR
+    net = IENetwork(model=model_xml, weights=model_bin)
+    input_blob = next(iter(net.inputs))
+    net.batch_size = len(facelist)
+
+    # Read and pre-process input images
+    n, c, h, w = net.inputs[input_blob].shape
+    images = np.ndarray(shape=(n, c, h, w))
+
+    # Loading model to the plugin
+    exec_net = ie.load_network(network=net, device_name='CPU')
+
+    # Resize and reshape input faces
+    for i in range(n):
+        image = facelist[i]
+        if image.shape[:-1] != (62, 62):
+            h, w = image.shape[:2]
+
+            # interpolation method
+            if h > 62 or w > 62:  # shrinking image
+                interp = cv2.INTER_AREA
+            else:  # stretching image
+                interp = cv2.INTER_CUBIC
+
+            # aspect ratio of image
+            aspect = w / h
+
+            # compute scaling and pad sizing
+            if aspect > 1:  # horizontal image
+                new_w = 62
+                new_h = np.round(new_w / aspect).astype(int)
+                pad_vert = (62 - new_h) / 2
+                pad_top, pad_bot = np.floor(pad_vert).astype(int), np.ceil(pad_vert).astype(int)
+                pad_left, pad_right = 0, 0
+            elif aspect < 1:  # vertical image
+                new_h = 62
+                new_w = np.round(new_h * aspect).astype(int)
+                pad_horz = (62 - new_w) / 2
+                pad_left, pad_right = np.floor(pad_horz).astype(int), np.ceil(pad_horz).astype(int)
+                pad_top, pad_bot = 0, 0
+            else:  # square image
+                new_h, new_w = 62, 62
+                pad_left, pad_right, pad_top, pad_bot = 0, 0, 0, 0
+
+            # set pad color
+            padColor = 0
+            if len(image.shape) is 3 and not isinstance(padColor, (
+                    list, tuple, np.ndarray)):  # color image but only one color provided
+                padColor = [padColor] * 3
+
+            # scale and pad
+            scaled_img = cv2.resize(image, (new_w, new_h), interpolation=interp)
+            scaled_img = cv2.cvtColor(scaled_img, cv2.COLOR_BGR2RGB)
+            scaled_img = cv2.copyMakeBorder(scaled_img, pad_top, pad_bot, pad_left, pad_right,
+                                            borderType=cv2.BORDER_CONSTANT, value=padColor)
+
+            image = scaled_img.transpose((2, 0, 1))  # Change data layout from HWC to CHW
+            images[i] = image
+
+    # Conduct inference
+    res = exec_net.infer(inputs={input_blob: images})
+
+    # Process inference results
+    for y in range(len(facelist)):
+        probable_age = int(np.squeeze(res['age_conv3'][y]) * 100)
+        if np.squeeze(res['prob'][y][0]) > 0.5:
+            gender = "Female"
+        else:
+            gender = "Male"
+
+        age_gender_combo = str(probable_age) + str(gender)
+
+        # Write inference results to resultsfile
+        hashvalue = hashvalues[imagelist[y]]
+        if REPORT_FORMAT[0] == 'Nuix':
+            line = str(age_gender_combo) + ",md5:" + hashvalue
+        else:
+            line = str(Path(image_paths[imagelist[y]]).name) + "," + str(hashvalue) + ",AGE-GENDER," + str(
+                age_gender_combo)
+
+        detectionresults.write(line + "\n")
+
 
 ######
-#
+# Detection with the OPEN VINO Framework
+# Creation of output file with hashes, detection scores and class
+######
+def run_inference_openvino(image_paths, images, hashvalue):
+
+    # Update progress meter and reopen results file
+    updateProgressMeter(6, 'Detecting with OpenVINO Object Detector')
+    logfile.write("*" + str(datetime.now()) + ": \tStarting detection with OpenVINO object detection model*\n")
+    detectionresults_path = PATH_TO_RESULTS / 'Detection_Results.csv'
+    detectionresults = open(str(detectionresults_path), 'a')
+
+    # Fetch paths for openvino model
+    model_path = Path('Models/OpenVINO/vgg19')
+    model_xml = str(model_path / 'model.xml')
+    model_bin = str(model_path / 'model.bin')
+    model_labels = str(model_path / 'model.labels')
+    temp_bilder = images
+
+     # Plugin initialization for specified device and load extensions library if specified
+    ie = IECore()
+
+    # Read IR
+    net = IENetwork(model=model_xml, weights=model_bin)
+
+    input_blob = next(iter(net.inputs))
+    out_blob = next(iter(net.outputs))
+    net.batch_size = 4000
+
+    # Read and pre-process input images
+    n, c, h, w = net.inputs[input_blob].shape
+    images = np.ndarray(shape=(n, c, h, w))
+
+    # Loading model to the plugin
+    exec_net = ie.load_network(network=net, device_name='CPU')
+
+    # Create batches to prevent RAM overload
+    batches = tuple(temp_bilder[x:x + net.batch_size] for x in range(0, len(temp_bilder), net.batch_size))
+
+    # Start sync inference
+    for batch in batches:
+        for index, temp_pic in enumerate(batch):
+            temp_pic = cv2.resize(temp_pic, (w, h))
+            temp_pic = temp_pic.transpose((2, 0, 1))
+            images[index] = temp_pic
+
+        res = exec_net.infer(inputs={input_blob: images})
+
+        # Processing output blob
+        res = res[out_blob]
+
+        # Prepare label file
+        with open(model_labels, 'r') as f:
+            labels_map = [x.split(sep=' ', maxsplit=1)[-1].strip() for x in f]
+
+        # Clean inference results and write them to resultsfile
+        for i, probs in enumerate(res):
+            probs = np.squeeze(probs)
+
+            top_ind = np.argsort(probs)[-3:][::-1]
+
+            for id in top_ind:
+                if probs[id] >= 0.3:
+                    # det_label = labels_map[id] if labels_map else "{}".format(id)
+                    det_label = labels_map[id].split(sep=' ', maxsplit=1)[1]
+                    if REPORT_FORMAT[0] == 'Nuix':
+                        line = ",".join([det_label, "md5:" + hashvalue])
+                    else:
+                        line = ",".join([Path(image_paths[i]).name, hashvalue[i], str(probs[id]), str(det_label)])
+                    detectionresults.write(line + "\n")
+
+    logfile.write("*" + str(datetime.now()) + ": \tFinished detection with OpenVINO object detection model*\n")
+
+######
 # Worker function to load and encode known faces and to compare them against
 # the provided input material
-#
 ######
 def faceRecognition(known_faces_path, image_paths, images, hashvalues):
 
@@ -376,8 +623,6 @@ def faceRecognition(known_faces_path, image_paths, images, hashvalues):
             if matches[best_match_index]:
                 name = known_face_names[best_match_index]
 
-
-
             # If there is a match, write it to the output file
             if name != "Unknown":
                 known_face_counter += 1
@@ -401,11 +646,11 @@ def faceRecognition(known_faces_path, image_paths, images, hashvalues):
                     detectedFace = Image.fromarray(image_to_detect)
                     detectedFace.save(savePath)
 
-
     #except:
     #    logfile.write("Issue with face recognition in some files.\n")
 
     logfile.write("*" + str(datetime.now()) + ": \tFace Recognition completed.*\n")
+
     detectionresults.flush()
     detectionresults.close()
 
@@ -475,15 +720,17 @@ if __name__ == '__main__':
 
     layout = [[sg.Text('General Settings', font=("Helvetica", 13), text_color='sea green')],
               [sg.Text('Please specify the folder holding the media data:')],
-              [sg.Input(), sg.FolderBrowse('Browse', initial_folder='', button_color=('black', 'grey'))], #Path.home() = Initial folder
+              [sg.Input(), sg.FolderBrowse('Browse', initial_folder='/home/b/Desktop/TestBilder', button_color=('black', 'grey'))], #Path.home() = Initial folder
               [sg.Text('Where shall I place the results?')],
-              [sg.Input(), sg.FolderBrowse('Browse', initial_folder='', button_color=('black', 'grey'))], #Path.home()
-              [sg.Text('Which things do you want to detect?')],
+              [sg.Input(), sg.FolderBrowse('Browse', initial_folder='/home/b/Desktop/TestResults', button_color=('black', 'grey'))], #Path.home()
+              [sg.Text('TENSORFLOW DETECTORS')],
               [sg.Checkbox('Objects/Persons', size=(15, 2)),
                sg.Checkbox('Actions'),
                sg.Checkbox('IS Logos'),
-               sg.Checkbox('Faces'),
                sg.Checkbox("Face Recognition")],
+              [sg.Text('OPEN VINO DETECTORS')],
+              [sg.Checkbox('Objects-fast', size=(15, 2)),
+               sg.Checkbox('Faces/Age/Gender')],
               [sg.Text('Output Format:'), sg.Listbox(values=('Nuix', 'XWays', 'csv'), size=(29, 3))],
               [sg.Text('Video Settings', font=("Helvetica", 13), text_color='sea green')],
               [sg.Text('# of frames to be analyzed per Minute:', size=(36, 0))],
@@ -494,7 +741,7 @@ if __name__ == '__main__':
                sg.InputCombo(('Yes', 'No'), default_value='No', size=(10, 2))],
               [sg.Text('Face Recognition', font=("Helvetica", 13), text_color='sea green')],
               [sg.Text('Specify folder with known faces (if FaceReq selected): ')],
-              [sg.Input(), sg.FolderBrowse('Browse', initial_folder='', button_color=('black', 'grey'))],
+              [sg.Input(), sg.FolderBrowse('Browse', initial_folder='/home/b/Desktop/known', button_color=('black', 'grey'))],
               [sg.Text('Specify face recognition tolerance (Default: 60%):', size=(48, 0))],
               [sg.Slider(range=(0, 100), orientation='h', size=(29, 20), default_value=60)],
               [sg.Checkbox('Output detected faces as jpg', size=(25, 2))],
@@ -522,7 +769,7 @@ if __name__ == '__main__':
     if StrictVersion(tf.__version__) < StrictVersion('1.9.0'):
         raise ImportError('Please upgrade your TensorFlow installation to v1.9.* or later!')
 
-    # Defining multiple needed variables based on GUI input & adding object_detection directory to path
+    # Defining multiple needed variables based on GUI input & adding TF/OpenVINO directory to path
     PATH_TO_INPUT = Path(gui_input[1][0])
     TEST_IMAGE_PATHS = Path.iterdir(PATH_TO_INPUT)
     number_of_input = 0
@@ -531,14 +778,15 @@ if __name__ == '__main__':
     PATH_TO_RESULTS = Path(gui_input[1][1])
     PATH_TO_OBJECT_DETECTION_DIR = '/home/b/Programs/tensorflow/models/research'  # PLACEHOLDER-tobereplacedWithPathtoDirectory
     sys.path.append(PATH_TO_OBJECT_DETECTION_DIR)
-    REPORT_FORMAT = gui_input[1][7]
 
-    frames_per_second = gui_input[1][8] / 60
-    max_frames_per_video = gui_input[1][9]
-    video_sensitivity_text = gui_input[1][10]
-    KNOWN_FACES_PATH = gui_input[1][11]
-    facereq_tolerance = int(gui_input[1][12])/100
-    output_detFaces = gui_input[1][13]
+    REPORT_FORMAT = gui_input[1][8]
+
+    frames_per_second = gui_input[1][9] / 60
+    max_frames_per_video = gui_input[1][10]
+    video_sensitivity_text = gui_input[1][11]
+    KNOWN_FACES_PATH = gui_input[1][12]
+    facereq_tolerance = int(gui_input[1][13])/100
+    output_detFaces = gui_input[1][14]
 
     if video_sensitivity_text == "Yes":
         video_sensitivity = 20
@@ -575,8 +823,9 @@ if __name__ == '__main__':
         graphlist.append(SPECIAL_DETECTOR_GRAPH)
         indexlist.append(SPECIAL_DETECTOR_INDEX)
 
-    FACE_MODEL = bool(gui_input[1][5])
-    FACE_RECOGNITION = bool(gui_input[1][6])
+    FACE_RECOGNITION = bool(gui_input[1][5])
+    OPEN_VINO_vgg19 = bool(gui_input[1][6])
+    FACE_MODEL = bool(gui_input[1][7])
 
     # Update the progress indicator
     updateProgressMeter(2, 'Process started. Loading images...')
@@ -595,7 +844,6 @@ if __name__ == '__main__':
         detectionresults.write("name,hash,score,category\n")
     detectionresults.flush()
     detectionresults.close()
-
 
     # Initiate needed variables
     vidlist = []
@@ -662,7 +910,6 @@ if __name__ == '__main__':
     image_path, hashvalues, image_nps = zip(*final_images)
 
 
-
     # Update the progress indicator & logfile
     updateProgressMeter(4, 'Starting detection...')
     logfile.write("*" + str(datetime.now()) + ": \tLoading completed. Detecting...*\n")
@@ -671,11 +918,16 @@ if __name__ == '__main__':
     if FACE_RECOGNITION:
         known_face_counter = faceRecognition(KNOWN_FACES_PATH, image_path, image_nps, hashvalues)
 
-    # Execute detection
-    detectedLogos, errorcount = run_inference_for_multiple_images(image_path, image_nps, hashvalues)
+    # Conduct OpenVino VGG19 Model if needed
+    if OPEN_VINO_vgg19:
+        run_inference_openvino(image_path, image_nps, hashvalues)
 
+    # Execute all other detection models
+    run_inference_for_multiple_images(image_path, image_nps, hashvalues)
 
-
+    # Conduct face/age/gender detection
+    if FACE_MODEL:
+        faceDetection(image_path, image_nps, hashvalues)
 
     # Check whether an Xways report needs to be created
     if REPORT_FORMAT[0] == 'XWays':
@@ -687,15 +939,17 @@ if __name__ == '__main__':
     logfile.write("*Processed Images:\t\t" + str(number_of_images) + "*\n")
     logfile.write("*Processed Videos: \t\t" + str(number_of_videos) + " (analyzed " + str(frames_per_second * 60) + " frames per minute, up to max. 500) with the check for content-based duplicates set to " + video_sensitivity_text + "\n")
     logfile.write("*Applied models:\n")
-    for y in range(0, len(graphlist)): logfile.write(graphlist[y] + "\n")
-    if FACE_MODEL: logfile.write("\t\t\t\tFace Detector\n")
+    for y in range(0, len(graphlist)): logfile.write("\t\t\t\t" + graphlist[y] + "\n")
+    if OPEN_VINO_vgg19: logfile.write("\t\t\t\tOpenVINO Object Detector\n")
+    if FACE_MODEL: logfile.write("\t\t\t\tFace-Age-Gender Detector\n")
     if FACE_RECOGNITION: logfile.write("\t\t\t\tFace Recognition (Known faces detected: " + str(known_face_counter) + ")\n")
     logfile.write("*Processing time:\t\t" + str(datetime.now() - startTime) + "*\n")
+    logfile.write("*Time per processed image:\t" + str((datetime.now() - startTime) / (number_of_images + number_of_videos)) + "*\n")
     logfile.flush()
     logfile.close()
 
     # Update progress indicator
-    sg.OneLineProgressMeter('BKP Media Detector', 10, 10, 'key', 'Detection finished',orientation='h',size=(100, 10))
+    sg.OneLineProgressMeter('BKP Media Detector', 11, 11, 'key', 'Detection finished',orientation='h',size=(100, 10))
 
     # Deliver final success pop up to user
     sg.Popup('The detection was successful',
