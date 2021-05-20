@@ -2,7 +2,7 @@
 
 ######
 # General Detector
-# 06.12.2018 / Last Update: 09.04.2020
+# 06.12.2018 / Last Update: 20.05.2021
 # LRB
 ######
 
@@ -28,6 +28,7 @@ from multiprocessing import Pool
 from Models.Face import detect_face
 from pathlib import Path
 from openvino.inference_engine import IENetwork, IECore
+from AudioAnalysis import audioAnalysis
 
 ######
 # Worker function to check the input provided via the GUI
@@ -36,10 +37,10 @@ def validateInput(gui_input):
 
     error = False
 
-    # Validate input
-    for element in gui_input[1][0:7]:
-        if element == '' or []:
-            error = True
+    #Validate input
+    # for element in gui_input[1][0:7]:
+    #     if element == '' or []:
+    #         error = True
 
     if gui_input[0] == "Cancel" or len(gui_input[1][8]) == 0:
         error = True
@@ -55,7 +56,7 @@ def validateInput(gui_input):
 # Worker function to update the progress bar
 ######
 def updateProgressMeter(step, customText):
-    if sg.OneLineProgressMeter('BKP Media Detector', step, 11, 'key', customText, orientation='h', size=(100, 11)) == False:
+    if sg.OneLineProgressMeter('BKP Media Detector', step, 12, 'key', customText, orientation='h', size=(50, 25)) == False:
         exit()
 
 ######
@@ -102,11 +103,15 @@ def load_image_into_numpy_array(image_path):
     except IOError or OSError:
         magictype = str(magic.from_file((image_path), mime=True))
         # If image file cannot be read, check if it is a video
-        if magictype[:5] == 'video' or magictype[12:17] == 'octet':
+        if magictype[:5] == 'video': #or magictype[12:17] == 'octet':
             # If so, return a video flag instead of numpy array
             flag = "VIDEO"
+        elif magictype[:5] == 'audio':
+            flag = "AUDIO"
+        elif magictype[12:17] == 'octet':
+            flag = "OCTET"
         else:
-            image_path = "Could not open image: " + str(image_path) + " (" + str(magictype) + ")\n"
+            image_path = "Could not open file: " + str(image_path) + " (" + str(magictype) + ")\n"
             flag = "ERROR"
         return image_path, flag
 
@@ -166,11 +171,12 @@ def load_video_into_numpy_array(image_path):
         fps = int(vidcap.get(cv2.CAP_PROP_FPS))
         framecount = int(vidcap.get(cv2.CAP_PROP_FRAME_COUNT))
         analyze_rate = int(framecount / fps * frames_per_second)
+
         if 0 < analyze_rate < max_frames_per_video:
             int(analyze_rate)
         elif analyze_rate >= int(max_frames_per_video):
-            analyze_rate = max_frames_per_video #Limiting maximum frames per video
-        elif analyze_rate <= 0:
+            analyze_rate = int(max_frames_per_video) #Limiting maximum frames per video
+        else:
             videoerror = 'Unable to extract frames from video: ' + str(image_path) + '\n'
             return videoerror
 
@@ -182,7 +188,8 @@ def load_video_into_numpy_array(image_path):
         hashvalue = hash_md5.hexdigest()
 
         # Extracting the frames from the video
-        for percentile in range(0, analyze_rate): #analyze_rate):
+        for percentile in range(0, analyze_rate):
+
             vidcap.set(cv2.CAP_PROP_POS_FRAMES, (framecount / analyze_rate) * percentile)
             success, extracted_frame = vidcap.read()
             if rotation != 3:
@@ -235,7 +242,6 @@ def run_inference_for_multiple_images(image_paths, images, hashvalues):
         detection_graph = tf.Graph()
         with detection_graph.as_default():
             od_graph_def = tf.GraphDef()
-
             logfile.write("*" + str(datetime.now()) + ": \tStarting detection with model " + str(y + 1) + " of " + str(len(graphlist)) + "*\n")
 
             # Update progress indicator
@@ -274,6 +280,7 @@ def run_inference_for_multiple_images(image_paths, images, hashvalues):
 
                 # Conduct actual detection within single image
                 for index, image in enumerate(images):
+                    updateProgressMeter(7 + y, str(graphlist[y]) + '\nFile ' + str(index) + ' of ' + str(len(images)))
                     try:
                         output_dict = sess.run(tensor_dict,
                                                feed_dict={image_tensor: np.expand_dims(image, 0)})
@@ -341,7 +348,7 @@ def faceDetection(image_paths, images, hashvalues):
 
         # Inference for all images
         for index, image in enumerate(images):
-
+            updateProgressMeter(10, 'Detecting with Face/Age/Gender Detector' + '\nFile ' + str(index) + ' of ' + str(len(images)))
             try:
                 bounding_boxes, _ = detect_face.detect_face(image, minsize, pnet, rnet, onet, threshold, factor)
                 nrof_faces = bounding_boxes.shape[0]
@@ -601,11 +608,10 @@ def faceRecognition(known_faces_path, image_paths, images, hashvalues):
     logfile.write("*" + str(datetime.now()) + ": \tStarting face recognition with " + str(len(known_face_names)) + " known faces*\n")
 
     # Load images, detect faces, encode and compare them to the known faces
-    #try:
     for index, image_to_detect in enumerate(images):
         hashvalue = hashvalues[index]
         image_path = image_paths[index]
-
+        updateProgressMeter(5, 'Face Reco Image ' + str(index) + ' of ' + str(len(images)))
         # Use GPU based model to detect & encode
         face_locations = face_recognition.face_locations(image_to_detect, model="cnn")
         face_encodings = face_recognition.face_encodings(image_to_detect, face_locations)
@@ -646,9 +652,6 @@ def faceRecognition(known_faces_path, image_paths, images, hashvalues):
                     detectedFace = Image.fromarray(image_to_detect)
                     detectedFace.save(savePath)
 
-    #except:
-    #    logfile.write("Issue with face recognition in some files.\n")
-
     logfile.write("*" + str(datetime.now()) + ": \tFace Recognition completed.*\n")
 
     detectionresults.flush()
@@ -656,6 +659,62 @@ def faceRecognition(known_faces_path, image_paths, images, hashvalues):
 
     # Return amount of detected known faces
     return known_face_counter
+
+######
+# Worker function to conduct speech detection in audio files
+# for all audio files detected
+######
+def audioSpeechDetection(audiolist):
+
+    logfile.write("*" + str(datetime.now()) + ": \tStarting audio speech detection*\n")
+    updateProgressMeter(11, 'Processing Audio Files')
+
+    audiocounter = 0
+
+    # Open the results file
+    detectionresults_path = PATH_TO_RESULTS / 'Detection_Results.csv'
+    detectionresults = open(str(detectionresults_path), 'a')
+
+    pool = Pool(maxtasksperchild=100)
+    result = pool.map(audioAnalysis.segmentSpeechDetection, audiolist, chunksize=10)
+    pool.close()
+
+    # Synchronize after completion
+    pool.join()
+    pool.terminate()
+
+    result = [x for x in result if x != None]
+
+    for processedAudio in result:
+        speechPercentage, audiopath = processedAudio
+
+        # Check for the video flag
+        if not isinstance(speechPercentage, float):
+            logfile.write("Unsupported audio file: " + str(audiopath) + "\n")
+        else:
+            speechPercentage, audiopath = processedAudio
+            # Hashing the video once
+            hash_md5 = hashlib.md5()
+            with open(audiopath, "rb") as f:
+                for chunk in iter(lambda: f.read(4096), b""):
+                    hash_md5.update(chunk)
+            hashvalue = hash_md5.hexdigest()
+            audiocounter += 1
+
+            if REPORT_FORMAT[0] == 'Nuix':
+                if speechPercentage != 0.0:
+                    line = ",".join(["AUDIO-SPEECH", "md5:" + hashvalue])
+            else:
+                line = ",".join([Path(audiopath).name, hashvalue, str(speechPercentage), "AUDIO-SPEECH"])
+            detectionresults.write(line + "\n")
+
+    logfile.write("*" + str(datetime.now()) + ": \tAudio speech detection completed.*\n")
+
+    detectionresults.flush()
+    detectionresults.close()
+
+    return audiocounter
+
 
 ######
 # Split the report file to allow seamless integration into XWays Hash Database per category
@@ -710,7 +769,7 @@ def createXWaysReport():
 # Prevent execution when externally called
 if __name__ == '__main__':
 
-    startTime = datetime.now()
+
 
     ######
     # Collecting parameters via GUI
@@ -745,10 +804,13 @@ if __name__ == '__main__':
               [sg.Text('Specify face recognition tolerance (Default: 60%):', size=(48, 0))],
               [sg.Slider(range=(0, 100), orientation='h', size=(29, 20), default_value=60)],
               [sg.Checkbox('Output detected faces as jpg', size=(25, 2))],
+              [sg.Text('Audio Settings', font=("Helvetica", 13), text_color='sea green')],
+              [sg.Text('AUDIO PROCESSING')],
+              [sg.Checkbox('Speech Detection', size=(15, 2))],
               [sg.OK(button_color=('black', 'sea green')), sg.Cancel(button_color=('black', 'grey'))]]
 
     layout_progress = [[sg.Text('Detection in progress')],
-                       [sg.ProgressBar(10, orientation='h', size=(20, 20), key='progressbar')],
+                       [sg.ProgressBar(12, orientation='h', size=(20, 20), key='progressbar')],
                        [sg.Cancel()]]
 
     # Render the GUI
@@ -760,7 +822,7 @@ if __name__ == '__main__':
 
     # Initiating progress meter
     updateProgressMeter(1, 'Initializing variables & parameters...')
-
+    startTime = datetime.now()
     # Variable to determine minimum GPU Processor requirement & to disable TF log output
     # os.environ['TF_MIN_GPU_MULTIPROCESSOR_COUNT'] = '5'
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
@@ -826,9 +888,10 @@ if __name__ == '__main__':
     FACE_RECOGNITION = bool(gui_input[1][5])
     OPEN_VINO_vgg19 = bool(gui_input[1][6])
     FACE_MODEL = bool(gui_input[1][7])
+    AUDIO_SPEECH_DETECTION = bool(gui_input[1][15])
 
     # Update the progress indicator
-    updateProgressMeter(2, 'Process started. Loading images...')
+    updateProgressMeter(2, 'Process started. Loading ' + str(number_of_input) + ' media files...')
 
     # Create logfile
     logfile = open(str(PATH_TO_RESULTS / 'Logfile.txt'), 'w')
@@ -847,6 +910,7 @@ if __name__ == '__main__':
 
     # Initiate needed variables
     vidlist = []
+    audiolist = []
     final_images = []
     errors = []
 
@@ -862,11 +926,18 @@ if __name__ == '__main__':
     # Clean the result for None types (where image conversion failed)
     processed_images = [x for x in processed_images if x != None]
 
-    # Check for the video flag
+    # Check for the different flags set by mimetype
     for processed_image in processed_images:
         if str(processed_image[1]) == "VIDEO":
             # If present, populate the video list
             vidlist.append(processed_image[0])
+        elif str(processed_image[1]) == "AUDIO":
+            audiolist.append(processed_image[0])
+        elif str(processed_image[1]) == "OCTET":
+            if processed_image[0][-3:] in ["mp4", "mov", "mpg", "avi", "exo", "mkv", "m4v", "ebm"]:
+                vidlist.append(processed_image[0])
+            else:
+                audiolist.append(processed_image[0])
         elif str(processed_image[1]) == "ERROR":
             errors.append(processed_image[0])
         else:
@@ -881,11 +952,11 @@ if __name__ == '__main__':
     number_of_images = len(final_images)
 
     # Update the progress indicator
-    updateProgressMeter(3, 'Loading Videos...')
+    updateProgressMeter(3, 'Loading ' + str(len(vidlist)) + ' Videos...')
 
     # Multiprocess the video load function on all CPU cores available
-    pool = Pool(maxtasksperchild=100)
-    videoframes = pool.map(load_video_into_numpy_array, vidlist, chunksize=10)
+    pool = Pool(maxtasksperchild=10)
+    videoframes = pool.map(load_video_into_numpy_array, vidlist, chunksize=2)
     pool.close()
 
     # Synchronize after completion
@@ -907,11 +978,11 @@ if __name__ == '__main__':
     logfile.flush()
 
     # Split the result from the loading function into hashes and image arrays
-    image_path, hashvalues, image_nps = zip(*final_images)
-
+    if len(final_images) != 0:
+        image_path, hashvalues, image_nps = zip(*final_images)
 
     # Update the progress indicator & logfile
-    updateProgressMeter(4, 'Starting detection...')
+    updateProgressMeter(4, 'Starting detection of ' + str(len(final_images)) + ' media files')
     logfile.write("*" + str(datetime.now()) + ": \tLoading completed. Detecting...*\n")
 
     # Conduct Face Recognition if needed
@@ -923,11 +994,17 @@ if __name__ == '__main__':
         run_inference_openvino(image_path, image_nps, hashvalues)
 
     # Execute all other detection models
-    run_inference_for_multiple_images(image_path, image_nps, hashvalues)
+    if len(final_images) != 0:
+        run_inference_for_multiple_images(image_path, image_nps, hashvalues)
 
     # Conduct face/age/gender detection
     if FACE_MODEL:
         faceDetection(image_path, image_nps, hashvalues)
+
+    if AUDIO_SPEECH_DETECTION:
+        audiofiles_processed = audioSpeechDetection(audiolist)
+    else:
+        audiofiles_processed = 0
 
     # Check whether an Xways report needs to be created
     if REPORT_FORMAT[0] == 'XWays':
@@ -935,21 +1012,22 @@ if __name__ == '__main__':
 
     # Write process statistics to logfile
     logfile.write("*Results:\t\t\t" + str(PATH_TO_RESULTS / 'Detection_Results.csv*\n'))
-    logfile.write("*Total Amount of Files:\t\t" + str(number_of_input) + " (of which " + str(number_of_images + number_of_videos) + " were processed.)*\n")
+    logfile.write("*Total Amount of Files:\t\t" + str(number_of_input) + " (of which " + str(number_of_images + number_of_videos + audiofiles_processed) + " were processed.)*\n")
     logfile.write("*Processed Images:\t\t" + str(number_of_images) + "*\n")
     logfile.write("*Processed Videos: \t\t" + str(number_of_videos) + " (analyzed " + str(frames_per_second * 60) + " frames per minute, up to max. 500) with the check for content-based duplicates set to " + video_sensitivity_text + "\n")
+    logfile.write("*Processed Audio Files:\t\t" + str(audiofiles_processed) + "*\n")
     logfile.write("*Applied models:\n")
     for y in range(0, len(graphlist)): logfile.write("\t\t\t\t" + graphlist[y] + "\n")
     if OPEN_VINO_vgg19: logfile.write("\t\t\t\tOpenVINO Object Detector\n")
     if FACE_MODEL: logfile.write("\t\t\t\tFace-Age-Gender Detector\n")
     if FACE_RECOGNITION: logfile.write("\t\t\t\tFace Recognition (Known faces detected: " + str(known_face_counter) + ")\n")
     logfile.write("*Processing time:\t\t" + str(datetime.now() - startTime) + "*\n")
-    logfile.write("*Time per processed image:\t" + str((datetime.now() - startTime) / (number_of_images + number_of_videos)) + "*\n")
+    logfile.write("*Time per processed file:\t" + str((datetime.now() - startTime) / (number_of_images + number_of_videos + audiofiles_processed)) + "*\n")
     logfile.flush()
     logfile.close()
 
     # Update progress indicator
-    sg.OneLineProgressMeter('BKP Media Detector', 11, 11, 'key', 'Detection finished',orientation='h',size=(100, 10))
+    sg.OneLineProgressMeter('BKP Media Detector', 12, 12, 'key', 'Detection finished',orientation='h',size=(100, 10))
 
     # Deliver final success pop up to user
     sg.Popup('The detection was successful',
