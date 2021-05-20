@@ -13,7 +13,7 @@ ImageHash==4.0
 imageio==2.5.0
 Keras-Applications==1.0.6
 Keras-Preprocessing==1.0.5
-lxml==3.5.0
+lxml==4.6.3
 matplotlib==3.0.2
 numpy==1.15.4
 object_detection==0.0.3
