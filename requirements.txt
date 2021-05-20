@@ -16,18 +16,21 @@ Keras-Preprocessing==1.0.5
 lxml==3.5.0
 matplotlib==3.0.2
 numpy==1.15.4
+object_detection==0.0.3
 opencv-python==3.4.4.19
-Pillow==5.3.0
+openvino==2021.3.0
+Pillow==8.2.0
 protobuf==3.6.1
 Pympler==0.6
-PySimpleGUI==3.26.0
+PySimpleGUI==4.41.2
+python_magic==0.4.22
 PyWavelets==1.0.3
 scipy==1.2.1
+scikit_learn==0.24.2
 six==1.10.0
-tensorboard==1.14.0
-tensorflow-estimator==1.14.0
-tensorflow-gpu==1.14.0
+tensorflow==1.15.2
 termcolor==1.1.0
+tqdm==4.45.0
 Werkzeug==0.14.1
 wrapt==1.11.2
 
