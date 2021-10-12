@@ -17,7 +17,7 @@ lxml==3.5.0
 matplotlib==3.0.2
 numpy==1.15.4
 object_detection==0.0.3
-opencv-python==3.4.4.19
+opencv-python==4.2.0.32
 openvino==2021.3.0
 Pillow==8.2.0
 protobuf==3.6.1
