@@ -15,7 +15,7 @@ Keras-Applications==1.0.6
 Keras-Preprocessing==1.0.5
 lxml==3.5.0
 matplotlib==3.0.2
-numpy==1.15.4
+numpy==1.22.0
 object_detection==0.0.3
 opencv-python==3.4.4.19
 openvino==2021.3.0
